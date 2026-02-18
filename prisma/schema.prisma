@@ -1,0 +1,130 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum Currency {
+  USD
+  KZT
+  EUR
+}
+
+enum AccountType {
+  CASH
+  BANK
+}
+
+enum CategoryType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  role         UserRole  @default(USER)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  accounts     Account[]
+  categories   Category[]
+  transactions Transaction[]
+  transfers    Transfer[]
+}
+
+model Account {
+  id             String      @id @default(uuid())
+  userId         String
+  name           String
+  type           AccountType
+  currency       Currency
+  initialBalance Decimal     @default(0.0) @db.Decimal(18, 2)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  transfersOut Transfer[]    @relation("TransferFromAccount")
+  transfersIn  Transfer[]    @relation("TransferToAccount")
+
+  @@index([userId])
+  @@unique([userId, name])
+}
+
+model Category {
+  id        String       @id @default(uuid())
+  userId    String
+  name      String
+  type      CategoryType
+  color     String?
+  icon      String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([userId])
+  @@unique([userId, type, name])
+}
+
+model Transaction {
+  id         String          @id @default(uuid())
+  userId     String
+  accountId  String
+  categoryId String
+  type       TransactionType
+  amount     Decimal         @db.Decimal(18, 2)
+  occurredAt DateTime
+  note       String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([userId, occurredAt])
+  @@index([accountId, occurredAt])
+  @@index([categoryId, occurredAt])
+}
+
+model Transfer {
+  id            String   @id @default(uuid())
+  userId        String
+  fromAccountId String
+  toAccountId   String
+  amount        Decimal  @db.Decimal(18, 2)
+  occurredAt    DateTime
+  note          String?
+  createdAt     DateTime @default(now())
+
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fromAccount Account @relation("TransferFromAccount", fields: [fromAccountId], references: [id], onDelete: Cascade)
+  toAccount   Account @relation("TransferToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
+
+  @@index([userId, occurredAt])
+  @@index([fromAccountId, occurredAt])
+  @@index([toAccountId, occurredAt])
+}
