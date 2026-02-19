@@ -3,12 +3,15 @@ import { PrismaService } from 'src/modules/prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { Prisma } from '@prisma/client';
+import { HashService } from 'src/modules/crypto/hash.service';
 
 @Injectable()
 export class UsersService {
   private prisma: PrismaService;
-  constructor(prisma: PrismaService) {
+  private hashService: HashService;
+  constructor(prisma: PrismaService, hashService: HashService) {
     this.prisma = prisma;
+    this.hashService = hashService;
   }
 
   async getUsers() {
@@ -16,12 +19,12 @@ export class UsersService {
   }
 
   async create(dto: CreateUserDto) {
-    // TODO: hash password - создать отдельный сервис для работы с паролями, который будет использовать bcrypt
+    const passwordHash = await this.hashService.hashPassword(dto.password);
     try {
       return await this.prisma.user.create({
         data: {
           email: dto.email,
-          passwordHash: dto.password,
+          passwordHash: passwordHash,
           firstName: dto.firstName,
           lastName: dto.lastName,
         },
@@ -44,15 +47,26 @@ export class UsersService {
   }
 
   async update(id: string, dto: UpdateUserDto) {
+    // TODO: проверка полей на undefined, чтобы не перезаписывать существующие данные на null
+    // const data: UpdateUserDto = {};
+
+    // if (dto.email !== undefined) data.email = dto.email;
+    // if (dto.firstName !== undefined) data.firstName = dto.firstName;
+    // if (dto.lastName !== undefined) data.lastName = dto.lastName;
+    // if (dto.password !== undefined)
+    //   data.password = await this.hashService.hashPassword(dto.password);
+
     return this.prisma.user.update({
       where: {
         id,
       },
       data: {
-        email: dto.email,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        passwordHash: dto.password, // TODO: hash
+        email: dto.email ? dto.email : undefined,
+        firstName: dto.firstName ? dto.firstName : undefined,
+        lastName: dto.lastName ? dto.lastName : undefined,
+        passwordHash: dto.password
+          ? await this.hashService.hashPassword(dto.password)
+          : undefined,
       },
     });
   }
