@@ -5,7 +5,13 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 type JwtPayload = {
   sub: string;
   email?: string;
-  platformRole?: string;
+  role?: string;
+};
+
+export type AuthUser = {
+  id: string;
+  email?: string;
+  role?: string;
 };
 
 @Injectable()
@@ -18,12 +24,12 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  validate(payload: JwtPayload) {
+  validate(payload: JwtPayload): AuthUser {
     if (!payload?.sub) throw new UnauthorizedException('Invalid JWT payload');
     return {
       id: payload.sub,
       email: payload.email,
-      platformRole: payload.platformRole,
+      role: payload.role,
     };
   }
 }

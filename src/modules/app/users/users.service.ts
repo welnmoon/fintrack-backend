@@ -1,9 +1,13 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+} from '@nestjs/common';
 import { PrismaService } from 'src/modules/prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { Prisma } from '@prisma/client';
 import { HashService } from 'src/modules/crypto/hash.service';
+import { MAX_ACCOUNTS_PER_USER } from 'src/common/constants/const';
 
 @Injectable()
 export class UsersService {
@@ -52,5 +56,56 @@ export class UsersService {
             : undefined,
       },
     });
+  }
+
+  // --------- Accounts ----------
+
+  async getUserAccounts(userId: string) {
+    return this.prisma.account.findMany({
+      where: {
+        userId,
+      },
+    });
+  }
+
+  async createAccount(userId: string) {
+    try {
+      const existingAccountsCount = await this.prisma.account.count({
+        where: { userId },
+      });
+
+      if (existingAccountsCount >= MAX_ACCOUNTS_PER_USER) {
+        throw new BadRequestException(
+          `User cannot have more than ${MAX_ACCOUNTS_PER_USER} accounts`,
+        );
+      }
+
+      const account = await this.prisma.$transaction(async (prisma) => {
+        const newAcc = await prisma.account.create({
+          data: {
+            userId,
+            name: `Account #${existingAccountsCount + 1}`,
+            type: 'BANK',
+            currency: 'KZT',
+          },
+        });
+
+        const accountNumber = `ACC${newAcc.sequence.toString().padStart(6, '0')}`;
+
+        const updated = await prisma.account.update({
+          where: { id: newAcc.id },
+          data: { accountNumber },
+        });
+        return updated;
+      });
+
+      return account;
+    } catch (e) {
+      console.log('error creating account', e?.code, e?.meta, e);
+      if (e instanceof BadRequestException) {
+        throw e;
+      }
+      throw new ConflictException('Failed to create account');
+    }
   }
 }

@@ -1,3 +1,4 @@
+import { Public } from 'src/common/decorators/public.decorator';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
@@ -11,6 +12,7 @@ export class UsersController {
   }
 
   @Get()
+  @Public()
   getUsers() {
     return this.usersService.getUsers();
   }
@@ -25,3 +27,5 @@ export class UsersController {
     return this.usersService.update(id, dto);
   }
 }
+
+// TODO: Мы остановились на том, что нужно реализовать метод получения счетов пользователя. Это кнтроллер me

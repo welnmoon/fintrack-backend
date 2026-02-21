@@ -54,9 +54,12 @@ model User {
   transfers    Transfer[]
 }
 
-model Account {
+// Account - это источник или назначение денег. Например, наличные, банковский счет, кредитная карта и т.д.
+model Account { 
   id             String      @id @default(uuid())
   userId         String
+  sequence Int @unique @default(autoincrement())
+  accountNumber String? @unique 
   name           String
   type           AccountType
   currency       Currency
