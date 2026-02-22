@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { CategoryType } from '@prisma/client';
 import { PrismaService } from 'src/modules/prisma/prisma.service';
+import { CategoryResponse } from './prisma/categories.select';
 
 @Injectable()
 export class CategoriesService {
@@ -14,6 +15,13 @@ export class CategoriesService {
           type,
           userId,
         },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          color: true,
+          icon: true,
+        },
       });
     } catch (e) {
       console.error('Error creating category:', e);
@@ -21,7 +29,10 @@ export class CategoriesService {
     }
   }
 
-  async getUserCategories(userId: string, type: CategoryType | 'ALL') {
+  async getUserCategories(
+    userId: string,
+    type: CategoryType | 'ALL',
+  ): Promise<CategoryResponse[]> {
     return this.prisma.category.findMany({
       where: {
         userId,
