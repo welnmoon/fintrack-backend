@@ -25,33 +25,39 @@ export class AuthService {
   ) {}
 
   async login(email: string, password: string): Promise<AuthResponseDto> {
-    const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) throw new UnauthorizedException();
+    try {
+      const user = await this.prisma.user.findUnique({ where: { email } });
+      if (!user) throw new UnauthorizedException();
 
-    const isPasswordValid = await this.hashService.verifyPassword(
-      user.passwordHash,
-      password,
-    );
+      const isPasswordValid = await this.hashService.verifyPassword(
+        user.passwordHash,
+        password,
+      );
 
-    if (!isPasswordValid) throw new UnauthorizedException();
+      if (!isPasswordValid) throw new UnauthorizedException();
 
-    const accessToken = this.jwt.sign({
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-    });
-
-    return {
-      accessToken,
-      user: {
-        id: user.id,
+      const accessToken = this.jwt.sign({
+        sub: user.id,
         email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
         role: user.role,
-      },
-    }; // refresh token тоже нужно возвращать, но для простоты примера мы его не реализуем сейчас
-    // TODO: Реализовать refresh token, чтобы не заставлять пользователя логиниться каждый раз при истечении access token. Для этого нужно создать отдельную сущность в базе данных для хранения refresh token, а также реализовать эндпоинт для его обновления.
+      });
+
+      return {
+        accessToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+        },
+      }; // refresh token тоже нужно возвращать, но для простоты примера мы его не реализуем сейчас
+      // TODO: Реализовать refresh token, чтобы не заставлять пользователя логиниться каждый раз при истечении access token. Для этого нужно создать отдельную сущность в базе данных для хранения refresh token, а также реализовать эндпоинт для его обновления.
+    } catch (e) {
+      if (e instanceof UnauthorizedException) throw e;
+      console.error('Error during login:', e);
+      throw e;
+    }
   }
 
   async register(

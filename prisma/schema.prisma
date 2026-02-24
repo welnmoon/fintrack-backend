@@ -76,6 +76,7 @@ model Account {
   @@unique([userId, name])
 }
 
+// Category - это классификация транзакций. Например, зарплата, продукты, развлечения и т.д. Категории могут быть двух типов: доходы и расходы. Транзакция может быть связана только с одной категорией, но категория может быть связана с несколькими транзакциями.
 model Category {
   id        String       @id @default(uuid())
   userId    String
@@ -93,6 +94,7 @@ model Category {
   @@unique([userId, type, name])
 }
 
+// Transaction - это запись о финансовой операции. Она связана с одним аккаунтом и одной категорией. Транзакция может быть двух типов: доход или расход. Например, если пользователь получает зарплату, то это будет транзакция типа доход, связанная с категорией "зарплата" и аккаунтом "банковский счет". Если пользователь покупает продукты, то это будет транзакция типа расход, связанная с категорией "продукты" и аккаунтом "наличные".
 model Transaction {
   id         String          @id @default(uuid())
   userId     String
@@ -123,6 +125,8 @@ model Transfer {
   occurredAt    DateTime
   note          String?
   createdAt     DateTime @default(now())
+
+  isCanceled    Boolean  @default(false)
 
   user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   fromAccount Account @relation("TransferFromAccount", fields: [fromAccountId], references: [id], onDelete: Cascade)

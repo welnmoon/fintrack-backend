@@ -2,7 +2,18 @@ import { Public } from 'src/common/decorators/public.decorator';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { AuthUser } from '../auth/jwt.strategy';
+import { AuthGuard } from '@nestjs/passport';
 
 @Controller('users')
 export class UsersController {
@@ -11,10 +22,10 @@ export class UsersController {
     this.usersService = usersService;
   }
 
-  @Get()
-  @Public()
-  getUsers() {
-    return this.usersService.getUsers();
+  @UseGuards(AuthGuard('jwt'))
+  @Get('me')
+  getMe(@CurrentUser() user: AuthUser) {
+    return this.usersService.getMe(user.id);
   }
 
   @Post()
@@ -25,6 +36,12 @@ export class UsersController {
   @Patch(':id')
   updateUser(@Param('id') id: string, @Body() dto: UpdateUserDto) {
     return this.usersService.update(id, dto);
+  }
+
+  @Get()
+  @Public()
+  getUsers() {
+    return this.usersService.getUsers();
   }
 }
 

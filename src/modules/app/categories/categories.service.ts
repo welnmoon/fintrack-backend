@@ -50,4 +50,26 @@ export class CategoriesService {
       },
     });
   }
+
+  async getCategoriesWithTransactions(
+    userId: string,
+    type: CategoryType | 'ALL',
+  ) {
+    return this.prisma.category.findMany({
+      where: {
+        userId,
+        ...(type && type !== 'ALL' ? { type } : {}),
+      },
+      include: {
+        transactions: {
+          orderBy: {
+            occurredAt: 'asc',
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+  }
 }

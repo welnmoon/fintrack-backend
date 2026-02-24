@@ -31,4 +31,12 @@ export class CategoriesController {
   ): Promise<CategoryResponse[]> {
     return this.categoriesService.getUserCategories(user.id, type);
   }
+
+  @Get('with-transactions')
+  getCategoriesWithTransactions(
+    @CurrentUser() user: AuthUser,
+    @Query('type') type: CategoryType | 'ALL' = 'ALL',
+  ) {
+    return this.categoriesService.getCategoriesWithTransactions(user.id, type);
+  }
 }

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/modules/prisma/prisma.service';
 import { HashService } from 'src/modules/crypto/hash.service';
+import { Decimal } from '@prisma/client/runtime/client';
 @Injectable()
 export class AccountsService {
   private prisma: PrismaService;
@@ -16,10 +17,63 @@ export class AccountsService {
   }
   async getUserAccounts(userId: string) {
     return this.prisma.account.findMany({
-      where: {
-        userId,
-      },
+      where: { userId },
     });
+    // const accounts = await this.prisma.account.findMany({
+    //   where: { userId },
+    //   select: {
+    //     id: true,
+    //     name: true,
+    //     currency: true,
+    //     initialBalance: true,
+    //   },
+    // });
+
+    // const [income, expense, transferIn, transferOut] = await Promise.all([
+    //   this.prisma.transaction.groupBy({
+    //     by: ['accountId'],
+    //     where: { userId, type: 'INCOME' },
+    //     _sum: { amount: true },
+    //   }),
+    //   this.prisma.transaction.groupBy({
+    //     by: ['accountId'],
+    //     where: { userId, type: 'EXPENSE' },
+    //     _sum: { amount: true },
+    //   }),
+    //   this.prisma.transfer.groupBy({
+    //     by: ['toAccountId'],
+    //     where: { userId, isCanceled: false },
+    //     _sum: { amount: true },
+    //   }),
+    //   this.prisma.transfer.groupBy({
+    //     by: ['fromAccountId'],
+    //     where: { userId, isCanceled: false },
+    //     _sum: { amount: true },
+    //   }),
+    // ]);
+
+    // const toMap = (
+    //   rows: { accountId: string; _sum: { amount: number | null } }[],
+    // ) => {
+    //   const map = new Map<string, number>();
+    //   rows.forEach((row) => {
+    //     map.set(row.accountId, row._sum.amount ?? 0);
+    //   });
+    //   return map;
+    // };
+
+    // const incomeMap = toMap(income);
+    // const expenseMap = toMap(expense);
+    // const transferInMap = toMap(transferIn);
+    // const transferOutMap = toMap(transferOut);
+
+    // return {
+    //   accounts,
+    //   income: incomeMap,
+    //   expense: expenseMap,
+    //   transferIn: transferInMap,
+    //   transferOut: transferOutMap,
+    // };
   }
 
   async getAccountById(userId: string, accountId: string) {

@@ -1,7 +1,8 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Res } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { Public } from 'src/common/decorators/public.decorator';
 import { AuthResponseDto } from './dto/auth-response-dto';
+import { Response } from 'express';
 
 @Controller('auth')
 export class AuthController {
@@ -10,8 +11,25 @@ export class AuthController {
   @Post('login')
   @HttpCode(200)
   @Public()
-  login(@Body() body: { email: string; password: string }) {
-    return this.auth.login(body.email, body.password);
+  async login(
+    @Body() body: { email: string; password: string },
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    console.log('Login attempt for email:', body.email);
+    const { accessToken, user } = await this.auth.login(
+      body.email,
+      body.password,
+    );
+
+    res.cookie('access_token', accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      sameSite: 'lax',
+      path: '/',
+    });
+
+    return { user };
   }
 
   @Post('register')
