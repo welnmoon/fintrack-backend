@@ -51,4 +51,15 @@ export class AuthController {
       body.lastName,
     );
   }
+
+  @Post('logout')
+  logout(@Res({ passthrough: true }) res: Response) {
+    res.clearCookie('access_token', {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+    });
+
+    return { message: 'Logged out' };
+  }
 }

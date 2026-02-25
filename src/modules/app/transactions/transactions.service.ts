@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/modules/prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 
@@ -7,11 +7,18 @@ export class TransactionsService {
   constructor(private prisma: PrismaService) {}
 
   async create(dto: CreateTransactionDto, userId: string) {
+    const account = await this.prisma.account.findFirst({
+      where: { id: dto.accountId, userId },
+      select: { id: true, initialBalance: true },
+    });
+
+    if (!account) throw new ForbiddenException('Account not found');
+
     return this.prisma.transaction.create({
       data: {
         userId,
         accountId: dto.accountId,
-        categoryId: dto.categoryId,
+        categoryId: dto.type === 'ADJUSTMENT' ? null : dto.categoryId,
         type: dto.type,
         amount: dto.amount,
         occurredAt: new Date(dto.occurredAt),

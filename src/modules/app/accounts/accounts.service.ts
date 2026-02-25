@@ -5,75 +5,101 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { PrismaService } from 'src/modules/prisma/prisma.service';
-import { HashService } from 'src/modules/crypto/hash.service';
-import { Decimal } from '@prisma/client/runtime/client';
+import { CreateAccountDto } from './dto/create-account.dto';
 @Injectable()
 export class AccountsService {
   private prisma: PrismaService;
-  //   private hashService: HashService;
   constructor(prisma: PrismaService) {
     this.prisma = prisma;
-    // this.hashService = hashService;
   }
+
   async getUserAccounts(userId: string) {
-    return this.prisma.account.findMany({
+    const accounts = await this.prisma.account.findMany({
       where: { userId },
+      include: {
+        transactions: {
+          select: {
+            type: true,
+            amount: true,
+            occurredAt: true,
+          },
+        },
+        transfersOut: {
+          where: { isCanceled: false },
+          select: { amount: true, occurredAt: true },
+        },
+        transfersIn: {
+          where: { isCanceled: false },
+          select: { amount: true, occurredAt: true },
+        },
+      },
     });
-    // const accounts = await this.prisma.account.findMany({
-    //   where: { userId },
-    //   select: {
-    //     id: true,
-    //     name: true,
-    //     currency: true,
-    //     initialBalance: true,
-    //   },
-    // });
 
-    // const [income, expense, transferIn, transferOut] = await Promise.all([
-    //   this.prisma.transaction.groupBy({
-    //     by: ['accountId'],
-    //     where: { userId, type: 'INCOME' },
-    //     _sum: { amount: true },
-    //   }),
-    //   this.prisma.transaction.groupBy({
-    //     by: ['accountId'],
-    //     where: { userId, type: 'EXPENSE' },
-    //     _sum: { amount: true },
-    //   }),
-    //   this.prisma.transfer.groupBy({
-    //     by: ['toAccountId'],
-    //     where: { userId, isCanceled: false },
-    //     _sum: { amount: true },
-    //   }),
-    //   this.prisma.transfer.groupBy({
-    //     by: ['fromAccountId'],
-    //     where: { userId, isCanceled: false },
-    //     _sum: { amount: true },
-    //   }),
-    // ]);
+    const accountsWithBalance = accounts.map((account) => {
+      const lastAdj = account.transactions
+        .filter((t) => t.type === 'ADJUSTMENT')
+        .sort(
+          (a, b) =>
+            new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime(),
+        )
+        .at(-1);
 
-    // const toMap = (
-    //   rows: { accountId: string; _sum: { amount: number | null } }[],
-    // ) => {
-    //   const map = new Map<string, number>();
-    //   rows.forEach((row) => {
-    //     map.set(row.accountId, row._sum.amount ?? 0);
-    //   });
-    //   return map;
-    // };
+      const lastAdjustmentTimeMs = lastAdj
+        ? new Date(lastAdj.occurredAt).getTime()
+        : null;
+      const baseBalance = lastAdj
+        ? Number(lastAdj.amount)
+        : Number(account.initialBalance);
 
-    // const incomeMap = toMap(income);
-    // const expenseMap = toMap(expense);
-    // const transferInMap = toMap(transferIn);
-    // const transferOutMap = toMap(transferOut);
+      const includedTransactions = account.transactions.filter((t) => {
+        if (t.type === 'ADJUSTMENT') return false;
+        if (lastAdjustmentTimeMs === null) return true;
+        return new Date(t.occurredAt).getTime() > lastAdjustmentTimeMs;
+      });
 
-    // return {
-    //   accounts,
-    //   income: incomeMap,
-    //   expense: expenseMap,
-    //   transferIn: transferInMap,
-    //   transferOut: transferOutMap,
-    // };
+      const incomeTotal = includedTransactions
+        .filter((t) => t.type === 'INCOME')
+        .reduce((sum, t) => sum + Number(t.amount), 0);
+
+      const expenseTotal = includedTransactions
+        .filter((t) => t.type === 'EXPENSE')
+        .reduce((sum, t) => sum + Number(t.amount), 0);
+
+      const transferOutTotal = account.transfersOut
+        .filter((tr) =>
+          lastAdjustmentTimeMs === null
+            ? true
+            : new Date(tr.occurredAt).getTime() > lastAdjustmentTimeMs,
+        )
+        .reduce((sum, tr) => sum + Number(tr.amount), 0);
+
+      const transferInTotal = account.transfersIn
+        .filter((tr) =>
+          lastAdjustmentTimeMs === null
+            ? true
+            : new Date(tr.occurredAt).getTime() > lastAdjustmentTimeMs,
+        )
+        .reduce((sum, tr) => sum + Number(tr.amount), 0);
+
+      const balance =
+        baseBalance +
+        incomeTotal -
+        expenseTotal +
+        transferInTotal -
+        transferOutTotal;
+
+      return {
+        id: account.id,
+        name: account.name,
+        currency: account.currency,
+        type: account.type,
+        accountNumber: account.accountNumber,
+        initialBalance: Number(account.initialBalance),
+        balance,
+      };
+    });
+
+    return accountsWithBalance;
   }
 
   async getAccountById(userId: string, accountId: string) {
@@ -85,7 +111,7 @@ export class AccountsService {
     });
   }
 
-  async createAccount(userId: string) {
+  async createAccount(userId: string, dto: CreateAccountDto) {
     try {
       const existingAccountsCount = await this.prisma.account.count({
         where: { userId },
@@ -98,12 +124,16 @@ export class AccountsService {
       }
 
       const account = await this.prisma.$transaction(async (prisma) => {
+        const accountName = dto.name
+          ? dto.name
+          : `Account #${existingAccountsCount + 1}`;
+
         const newAcc = await prisma.account.create({
           data: {
             userId,
-            name: `Account #${existingAccountsCount + 1}`,
-            type: 'BANK',
-            currency: 'KZT',
+            name: accountName,
+            type: dto.type,
+            currency: dto.currency,
           },
         });
 
@@ -112,6 +142,22 @@ export class AccountsService {
         const updated = await prisma.account.update({
           where: { id: newAcc.id },
           data: { accountNumber },
+          select: {
+            accountNumber: true,
+            currency: true,
+            createdAt: true,
+            id: true,
+            name: true,
+            initialBalance: true,
+            type: true,
+            userId: true,
+            sequence: true,
+            _count: {
+              select: {
+                transactions: true,
+              },
+            },
+          },
         });
         return updated;
       });

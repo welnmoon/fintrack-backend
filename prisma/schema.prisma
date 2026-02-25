@@ -36,6 +36,7 @@ enum CategoryType {
 enum TransactionType {
   INCOME
   EXPENSE
+  ADJUSTMENT
 }
 
 model User {
@@ -99,7 +100,7 @@ model Transaction {
   id         String          @id @default(uuid())
   userId     String
   accountId  String
-  categoryId String
+  categoryId String?
   type       TransactionType
   amount     Decimal         @db.Decimal(18, 2)
   occurredAt DateTime
@@ -109,7 +110,7 @@ model Transaction {
 
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   account  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@index([userId, occurredAt])
   @@index([accountId, occurredAt])

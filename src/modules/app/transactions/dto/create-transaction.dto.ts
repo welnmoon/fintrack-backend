@@ -13,7 +13,8 @@ export class CreateTransactionDto {
   accountId: string;
 
   @IsUUID()
-  categoryId: string;
+  @IsOptional()
+  categoryId?: string;
 
   @IsEnum(TransactionType)
   type: TransactionType;
