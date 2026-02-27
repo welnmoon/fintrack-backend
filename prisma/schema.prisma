@@ -102,14 +102,31 @@ model Transaction {
   accountId  String
   categoryId String?
   type       TransactionType
+
+  // posted amount: сумма, которая влияет на баланс счета,
+  // всегда в валюте account.currency
   amount     Decimal         @db.Decimal(18, 2)
+
+  // original input: как ввёл пользователь (может быть в другой валюте),
+  // заполняется только если originalCurrency != account.currency
+  originalAmount   Decimal?  @db.Decimal(18, 2)
+
+  // валюта ввода пользователя (KZT/USD/EUR),
+  // нужна, чтобы понимать смысл exchangeRate и правильно показывать в UI
+  originalCurrency Currency?
+
+  // snapshot курса на момент операции (вариант A):
+  // "account.currency за 1 originalCurrency"
+  // пример: account=USD, original=KZT => exchangeRate = USD за 1 KZT (0.002...)
+  exchangeRate     Decimal?  @db.Decimal(18, 8)
+
   occurredAt DateTime
   note       String?
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
 
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  account  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   category Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@index([userId, occurredAt])
@@ -122,11 +139,21 @@ model Transfer {
   userId        String
   fromAccountId String
   toAccountId   String
-  amount        Decimal  @db.Decimal(18, 2)
+
+  // сколько списали со счета-источника, в валюте fromAccount.currency
+  fromAmount   Decimal @db.Decimal(18, 2)
+
+  // сколько зачислили на счет-получатель, в валюте toAccount.currency
+  toAmount     Decimal @db.Decimal(18, 2)
+
+  // snapshot курса на момент перевода (вариант A):
+  // "toAccount.currency за 1 fromAccount.currency"
+  // пример: from=KZT, to=USD => exchangeRate = USD за 1 KZT (0.002...)
+  exchangeRate Decimal @db.Decimal(18, 8)
+
   occurredAt    DateTime
   note          String?
   createdAt     DateTime @default(now())
-
   isCanceled    Boolean  @default(false)
 
   user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)

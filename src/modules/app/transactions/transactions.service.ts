@@ -11,10 +11,11 @@ export class TransactionsService {
       where: { id: dto.accountId, userId },
       select: { id: true, initialBalance: true },
     });
-
+    console.log('Create Transaction: ', dto.amount);
     if (!account) throw new ForbiddenException('Account not found');
+    console.log('After checkings: ', dto.amount);
 
-    return this.prisma.transaction.create({
+    const tr = await this.prisma.transaction.create({
       data: {
         userId,
         accountId: dto.accountId,
@@ -37,6 +38,10 @@ export class TransactionsService {
         updatedAt: true,
       },
     });
+
+    console.log('TR: ', tr.amount);
+
+    return tr;
   }
 
   async getUserTransactions(userId: string) {
@@ -52,8 +57,16 @@ export class TransactionsService {
         amount: true,
         occurredAt: true,
         note: true,
+        account: { select: { currency: true } },
         createdAt: true,
         updatedAt: true,
+        category: {
+          select: {
+            icon: true,
+            color: true,
+            name: true,
+          },
+        },
       },
     });
   }

@@ -6,6 +6,7 @@ import { AuthModule } from './modules/app/auth/auth.module';
 import { AccountsModule } from './modules/app/accounts/accounts.module';
 import { CategoriesModule } from './modules/app/categories/categories.module';
 import { TransactionsModule } from './modules/app/transactions/transactions.module';
+import { TransfersModule } from './modules/app/transfers/transfers.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { TransactionsModule } from './modules/app/transactions/transactions.modu
     AccountsModule,
     CategoriesModule,
     TransactionsModule,
+    TransfersModule,
   ],
 })
 export class AppModule {}

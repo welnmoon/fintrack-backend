@@ -21,6 +21,11 @@ export class AccountsController {
     return this.accountsService.createAccount(user.id, dto);
   }
 
+  @Get('options')
+  getAccountOptions(@CurrentUser() user: AuthUser) {
+    return this.accountsService.getAccountOptions(user.id);
+  }
+
   @Get(':id')
   getAccountById(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.accountsService.getAccountById(user.id, id);

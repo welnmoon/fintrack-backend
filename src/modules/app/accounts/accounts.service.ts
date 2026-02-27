@@ -26,11 +26,11 @@ export class AccountsService {
         },
         transfersOut: {
           where: { isCanceled: false },
-          select: { amount: true, occurredAt: true },
+          select: { fromAmount: true, occurredAt: true },
         },
         transfersIn: {
           where: { isCanceled: false },
-          select: { amount: true, occurredAt: true },
+          select: { toAmount: true, occurredAt: true },
         },
       },
     });
@@ -40,9 +40,9 @@ export class AccountsService {
         .filter((t) => t.type === 'ADJUSTMENT')
         .sort(
           (a, b) =>
-            new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime(),
+            new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
         )
-        .at(-1);
+        .at(0);
 
       const lastAdjustmentTimeMs = lastAdj
         ? new Date(lastAdj.occurredAt).getTime()
@@ -71,7 +71,7 @@ export class AccountsService {
             ? true
             : new Date(tr.occurredAt).getTime() > lastAdjustmentTimeMs,
         )
-        .reduce((sum, tr) => sum + Number(tr.amount), 0);
+        .reduce((sum, tr) => sum + Number(tr.fromAmount), 0);
 
       const transferInTotal = account.transfersIn
         .filter((tr) =>
@@ -79,8 +79,7 @@ export class AccountsService {
             ? true
             : new Date(tr.occurredAt).getTime() > lastAdjustmentTimeMs,
         )
-        .reduce((sum, tr) => sum + Number(tr.amount), 0);
-
+        .reduce((sum, tr) => sum + Number(tr.toAmount), 0);
       const balance =
         baseBalance +
         incomeTotal -
@@ -170,5 +169,14 @@ export class AccountsService {
       }
       throw new ConflictException('Failed to create account');
     }
+  }
+
+  async getAccountOptions(userId: string) {
+    console.log('get acc options: ', userId);
+    return this.prisma.account.findMany({
+      where: { userId },
+      select: { id: true, name: true, type: true, currency: true },
+      orderBy: { name: 'asc' },
+    });
   }
 }
