@@ -1,10 +1,15 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/modules/prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
+import { CategoriesService } from '../categories/categories.service';
+import { getCurrentMonthRange } from 'src/common/helpers/get-current-month-range';
 
 @Injectable()
 export class TransactionsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private categoriesService: CategoriesService,
+  ) {}
 
   async create(dto: CreateTransactionDto, userId: string) {
     const account = await this.prisma.account.findFirst({
@@ -62,12 +67,76 @@ export class TransactionsService {
         updatedAt: true,
         category: {
           select: {
-            icon: true,
-            color: true,
+            iconKey: true,
+            colorKey: true,
             name: true,
           },
         },
       },
     });
+  }
+
+  async getCurrentMonthIncomeExpense(userId: string) {
+    const { periodEnd, periodStart } = getCurrentMonthRange();
+
+    const sums = await this.prisma.transaction.groupBy({
+      by: ['type'],
+      where: {
+        userId,
+        occurredAt: { gte: periodStart, lte: periodEnd },
+        type: { in: ['INCOME', 'EXPENSE'] },
+      },
+      _sum: { amount: true },
+    });
+
+    const income =
+      sums.find((item) => item.type === 'INCOME')?._sum.amount ?? 0;
+    const expense =
+      sums.find((item) => item.type === 'EXPENSE')?._sum.amount ?? 0;
+    const topCategories =
+      await this.categoriesService.getTopIncomeExpenseCategories(
+        userId,
+        periodStart,
+        periodEnd,
+      );
+
+    return {
+      periodStart,
+      periodEnd,
+      income: Number(income),
+      expense: Number(expense),
+      ...topCategories,
+    };
+  }
+
+  async getLastTransactions(userId: string) {
+    const tr = await this.prisma.transaction.findMany({
+      where: { userId },
+      select: {
+        account: {
+          select: {
+            id: true,
+            name: true,
+            currency: true,
+          },
+        },
+        category: {
+          select: {
+            name: true,
+            id: true,
+          },
+        },
+        type: true,
+
+        originalAmount: true,
+        amount: true,
+        id: true,
+        occurredAt: true,
+      },
+      orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+      take: 10,
+    });
+
+    return tr;
   }
 }

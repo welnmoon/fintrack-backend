@@ -13,7 +13,6 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { AuthUser } from '../auth/jwt.strategy';
-import { AuthGuard } from '@nestjs/passport';
 
 @Controller('users')
 export class UsersController {
@@ -32,9 +31,9 @@ export class UsersController {
     return this.usersService.create(dto);
   }
 
-  @Patch(':id')
-  updateUser(@Param('id') id: string, @Body() dto: UpdateUserDto) {
-    return this.usersService.update(id, dto);
+  @Patch('me')
+  updateUser(@CurrentUser() user: AuthUser, @Body() dto: UpdateUserDto) {
+    return this.usersService.update(user.id, dto);
   }
 
   @Get()

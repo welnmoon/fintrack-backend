@@ -1,20 +1,24 @@
-// access & refresh token
-// Разница между ними в том, что access token имеет короткий срок жизни (обычно 15 минут), а refresh token - более длительный (обычно 7 дней). Access token используется для доступа к защищенным ресурсам, а refresh token - для получения нового access token, когда он истекает. Это повышает безопасность, так как даже если access token будет скомпрометирован, злоумышленник не сможет долго использовать его без refresh token.
-
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { HashService } from 'src/modules/crypto/hash.service';
 import { PrismaService } from 'src/modules/prisma/prisma.service';
 import { AuthResponseDto } from './dto/auth-response-dto';
+import { AuthUser } from './jwt.strategy';
 
-// Можно ли украсть refresh token? Да, теоретически это возможно, если злоумышленник получит доступ к устройству пользователя или перехватит токен. Поэтому важно хранить refresh token в безопасном месте (например, в HttpOnly cookie) и использовать дополнительные меры безопасности, такие как двухфакторная аутентификация и мониторинг подозрительной активности.
+type JwtRefreshPayload = {
+  sub: string;
+  iat: number;
+  exp: number;
+};
 
-// Можно ли украсть access token? Да, access token также может быть украден, если злоумышленник получит доступ к устройству пользователя или перехватит токен. Поэтому важно использовать безопасные методы хранения (например, в памяти приложения) и передачи (например, через HTTPS) для защиты access token от кражи.
-
-// Важно отметить, что даже если access token будет украден, злоумышленник сможет использовать его только в течение короткого времени, так как access token имеет ограниченный срок жизни. Поэтому использование refresh token позволяет минимизировать риски, связанные с кражей access token, и обеспечивает более безопасный механизм аутентификации.
-
-// Почему в NestJs используются классы?
-// В NestJS используются классы для создания компонентов, таких как контроллеры, сервисы и модули, потому что классы предоставляют удобный способ организации и инкапсуляции логики приложения. Классы позволяют создавать объекты с определенными свойствами и методами, что способствует лучшей структуре кода и облегчает его поддержку. Кроме того, использование классов позволяет использовать возможности объектно-ориентированного программирования, такие как наследование и полиморфизм, что может улучшить гибкость и расширяемость приложения.
+type IssuedTokens = {
+  accessToken: string;
+  refreshToken: string;
+};
+type RefreshResponse = {
+  accessToken: string;
+  refreshToken: string;
+};
 
 @Injectable()
 export class AuthService {
@@ -24,26 +28,48 @@ export class AuthService {
     private hashService: HashService,
   ) {}
 
+  private async issueTokens(user: AuthUser) {
+    const payload = { sub: user.id, email: user.email, role: user.role };
+
+    const accessToken = await this.jwt.signAsync(payload, {
+      secret: process.env.JWT_ACCESS_SECRET!,
+      expiresIn: '15m',
+    });
+
+    const refreshToken = await this.jwt.signAsync(payload, {
+      secret: process.env.JWT_REFRESH_SECRET!,
+      expiresIn: '30d',
+    });
+
+    return { accessToken, refreshToken };
+  }
+
+  private async setRefreshToken(userId: string, refreshToken: string) {
+    const hash = await this.hashService.hashPassword(refreshToken);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { refreshTokenHash: hash },
+    });
+  }
+
   async login(email: string, password: string): Promise<AuthResponseDto> {
     try {
       const user = await this.prisma.user.findUnique({ where: { email } });
       if (!user) throw new UnauthorizedException();
 
-      // const isPasswordValid = await this.hashService.verifyPassword(
-      //   user.passwordHash,
-      //   password,
-      // );
+      const isPasswordValid = await this.hashService.verifyPassword(
+        user.passwordHash,
+        password,
+      );
 
-      // if (!isPasswordValid) throw new UnauthorizedException();
+      if (!isPasswordValid) throw new UnauthorizedException();
 
-      const accessToken = this.jwt.sign({
-        sub: user.id,
-        email: user.email,
-        role: user.role,
-      });
+      const { accessToken, refreshToken } = await this.issueTokens(user);
+      await this.setRefreshToken(user.id, refreshToken);
 
       return {
         accessToken,
+        refreshToken,
         user: {
           id: user.id,
           email: user.email,
@@ -51,8 +77,7 @@ export class AuthService {
           lastName: user.lastName,
           role: user.role,
         },
-      }; // refresh token тоже нужно возвращать, но для простоты примера мы его не реализуем сейчас
-      // TODO: Реализовать refresh token, чтобы не заставлять пользователя логиниться каждый раз при истечении access token. Для этого нужно создать отдельную сущность в базе данных для хранения refresh token, а также реализовать эндпоинт для его обновления.
+      };
     } catch (e) {
       if (e instanceof UnauthorizedException) throw e;
       console.error('Error during login:', e);
@@ -82,14 +107,12 @@ export class AuthService {
       },
     });
 
-    const accessToken = this.jwt.sign({
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-    });
+    const { accessToken, refreshToken } = await this.issueTokens(user);
+    await this.setRefreshToken(user.id, refreshToken);
 
     return {
       accessToken,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,
@@ -98,5 +121,50 @@ export class AuthService {
         lastName: user.lastName,
       },
     };
+  }
+
+  private async verifyRefreshToken(token: string): Promise<JwtRefreshPayload> {
+    return this.jwt.verifyAsync<JwtRefreshPayload>(token, {
+      secret: process.env.JWT_REFRESH_SECRET!,
+    });
+  }
+
+  async refresh(refreshToken: string): Promise<IssuedTokens> {
+    let payload: JwtRefreshPayload;
+
+    try {
+      payload = await this.verifyRefreshToken(refreshToken);
+    } catch {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: payload.sub,
+      },
+    });
+
+    if (!user?.refreshTokenHash) {
+      throw new UnauthorizedException();
+    }
+
+    const isValid = await this.hashService.verifyPassword(
+      user.refreshTokenHash,
+      refreshToken,
+    );
+
+    if (!isValid) {
+      throw new UnauthorizedException();
+    }
+
+    const tokens = await this.issueTokens({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+    });
+
+    await this.setRefreshToken(user.id, tokens.refreshToken);
+
+    return tokens;
   }
 }

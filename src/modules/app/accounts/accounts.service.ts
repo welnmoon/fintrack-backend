@@ -1,4 +1,4 @@
-import { MAX_ACCOUNTS_PER_USER } from 'src/common/constants/const';
+import { MAX_ACCOUNTS_PER_USER } from 'src/common/constants/account';
 import {
   BadRequestException,
   ConflictException,
@@ -6,10 +6,16 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/modules/prisma/prisma.service';
 import { CreateAccountDto } from './dto/create-account.dto';
+import { calcAccountBalance } from './lib/calc-account-balance';
+import { FxService } from 'src/modules/fx/fx.service';
+import { Currency } from '@prisma/client';
 @Injectable()
 export class AccountsService {
   private prisma: PrismaService;
-  constructor(prisma: PrismaService) {
+  constructor(
+    prisma: PrismaService,
+    private fx: FxService,
+  ) {
     this.prisma = prisma;
   }
 
@@ -36,56 +42,12 @@ export class AccountsService {
     });
 
     const accountsWithBalance = accounts.map((account) => {
-      const lastAdj = account.transactions
-        .filter((t) => t.type === 'ADJUSTMENT')
-        .sort(
-          (a, b) =>
-            new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
-        )
-        .at(0);
-
-      const lastAdjustmentTimeMs = lastAdj
-        ? new Date(lastAdj.occurredAt).getTime()
-        : null;
-      const baseBalance = lastAdj
-        ? Number(lastAdj.amount)
-        : Number(account.initialBalance);
-
-      const includedTransactions = account.transactions.filter((t) => {
-        if (t.type === 'ADJUSTMENT') return false;
-        if (lastAdjustmentTimeMs === null) return true;
-        return new Date(t.occurredAt).getTime() > lastAdjustmentTimeMs;
+      const balance = calcAccountBalance({
+        initialBalance: account.initialBalance,
+        transactions: account.transactions,
+        transfersIn: account.transfersIn,
+        transfersOut: account.transfersOut,
       });
-
-      const incomeTotal = includedTransactions
-        .filter((t) => t.type === 'INCOME')
-        .reduce((sum, t) => sum + Number(t.amount), 0);
-
-      const expenseTotal = includedTransactions
-        .filter((t) => t.type === 'EXPENSE')
-        .reduce((sum, t) => sum + Number(t.amount), 0);
-
-      const transferOutTotal = account.transfersOut
-        .filter((tr) =>
-          lastAdjustmentTimeMs === null
-            ? true
-            : new Date(tr.occurredAt).getTime() > lastAdjustmentTimeMs,
-        )
-        .reduce((sum, tr) => sum + Number(tr.fromAmount), 0);
-
-      const transferInTotal = account.transfersIn
-        .filter((tr) =>
-          lastAdjustmentTimeMs === null
-            ? true
-            : new Date(tr.occurredAt).getTime() > lastAdjustmentTimeMs,
-        )
-        .reduce((sum, tr) => sum + Number(tr.toAmount), 0);
-      const balance =
-        baseBalance +
-        incomeTotal -
-        expenseTotal +
-        transferInTotal -
-        transferOutTotal;
 
       return {
         id: account.id,
@@ -99,6 +61,76 @@ export class AccountsService {
     });
 
     return accountsWithBalance;
+  }
+
+  async getUserAccountsTotalBalance(userId: string) {
+    const [user, accounts] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { defaultCurrency: true },
+      }),
+      this.prisma.account.findMany({
+        where: { userId },
+        include: {
+          transactions: {
+            select: { type: true, amount: true, occurredAt: true },
+          },
+          transfersOut: {
+            where: { isCanceled: false },
+            select: { fromAmount: true, occurredAt: true },
+          },
+          transfersIn: {
+            where: { isCanceled: false },
+            select: { toAmount: true, occurredAt: true },
+          },
+        },
+      }),
+    ]);
+
+    const target = (user?.defaultCurrency ?? 'KZT') as Currency;
+
+    const balances = accounts.map((a) => ({
+      currency: a.currency,
+      balance: calcAccountBalance({
+        initialBalance: a.initialBalance,
+        transactions: a.transactions,
+        transfersIn: a.transfersIn,
+        transfersOut: a.transfersOut,
+      }),
+    }));
+
+    const totalsByCurrency = balances.reduce(
+      (acc, x) => {
+        acc[x.currency] = (acc[x.currency] ?? 0) + x.balance;
+        return acc;
+      },
+      {} as Record<Currency, number>,
+    );
+
+    try {
+      const converted = await Promise.all(
+        balances.map(async (x) => {
+          const r = await this.fx.convert(x.currency, target, x.balance);
+          return r.convertedAmount;
+        }),
+      );
+
+      const total = converted.reduce((s, n) => s + n, 0);
+
+      return {
+        currency: target,
+        total,
+        fxUnavailable: false,
+        totalsByCurrency,
+      };
+    } catch (e) {
+      return {
+        currency: target,
+        total: null,
+        fxUnavailable: true,
+        totalsByCurrency,
+      };
+    }
   }
 
   async getAccountById(userId: string, accountId: string) {

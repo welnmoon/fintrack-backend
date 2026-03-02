@@ -8,7 +8,7 @@ export class FxService {
   private readonly apiKey = process.env.FIXER_API_KEY ?? '';
   private readonly baseUrl =
     process.env.FIXER_BASE_URL ?? 'http://data.fixer.io/api';
-  private readonly ttl = Number(process.env.FX_CACHE_TTL_SECONDS ?? 600);
+  private readonly ttl = Number(process.env.FX_CACHE_TTL_SECONDS ?? 3600);
 
   constructor(
     private readonly http: HttpService,
@@ -49,8 +49,9 @@ export class FxService {
     if (f === t) return 1;
 
     const key = `fx:latest:${f}:${t}`;
+
     const cached = await this.cache.get<number>(key);
-    if (cached) return cached;
+    if (cached !== undefined && cached !== null) return cached;
 
     const url =
       `${this.baseUrl}/latest` +

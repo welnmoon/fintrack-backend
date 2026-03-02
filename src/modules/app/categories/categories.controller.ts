@@ -1,42 +1,53 @@
-import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { CategoriesService } from './categories.service';
+import { CreateCategoryDto } from './dto/create-category.dto';
+import { UpdateCategoryDto } from './dto/update-category.dto';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { AuthUser } from '../auth/jwt.strategy';
-import { CategoryType } from '@prisma/client';
-import { CreateCategoryDto } from './dto/create-category.dto';
-import { CategoryResponse } from './prisma/categories.select';
-import { ApiBody, ApiCreatedResponse, ApiOkResponse } from '@nestjs/swagger';
-import { CategoryResponseDto } from './dto/category.response.dto';
 
 @Controller('categories')
 export class CategoriesController {
-  constructor(private categoriesService: CategoriesService) {}
+  constructor(private readonly service: CategoriesService) {}
+
+  @Get('presets')
+  presets() {
+    return this.service.presets();
+  }
 
   @Post()
-  @ApiBody({ type: CreateCategoryDto })
-  @ApiCreatedResponse({ type: CategoryResponseDto })
-  @HttpCode(201)
-  createCategory(
-    @Body() dto: CreateCategoryDto,
-    @CurrentUser() user: AuthUser,
-  ) {
-    return this.categoriesService.create(dto.name, dto.type, user.id);
+  create(@Body() dto: CreateCategoryDto, @CurrentUser() user: AuthUser) {
+    return this.service.create(user.id, dto);
   }
 
   @Get()
-  @ApiOkResponse({ type: CategoryResponseDto, isArray: true })
-  getCategories(
-    @CurrentUser() user: AuthUser,
-    @Query('type') type: CategoryType | 'ALL' = 'ALL',
-  ): Promise<CategoryResponse[]> {
-    return this.categoriesService.getUserCategories(user.id, type);
+  findAll(@CurrentUser() user: AuthUser) {
+    return this.service.findAll(user.id);
   }
 
-  @Get('with-transactions')
-  getCategoriesWithTransactions(
+  @Get(':id')
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.service.findOne(user.id, id);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateCategoryDto,
     @CurrentUser() user: AuthUser,
-    @Query('type') type: CategoryType | 'ALL' = 'ALL',
   ) {
-    return this.categoriesService.getCategoriesWithTransactions(user.id, type);
+    return this.service.update(user.id, id, dto);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.service.remove(user.id, id);
   }
 }

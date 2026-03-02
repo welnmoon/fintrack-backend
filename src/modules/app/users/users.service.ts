@@ -66,13 +66,21 @@ export class UsersService {
         id,
       },
       data: {
-        email: dto.email ?? undefined,
-        firstName: dto.firstName ?? undefined,
-        lastName: dto.lastName ?? undefined,
-        passwordHash:
-          dto.password !== undefined
-            ? await this.hashService.hashPassword(dto.password)
-            : undefined,
+        ...(dto.email !== undefined ? { email: dto.email } : {}),
+        ...(dto.firstName !== undefined ? { firstName: dto.firstName } : {}),
+        ...(dto.lastName !== undefined ? { lastName: dto.lastName } : {}),
+        ...(dto.defaultCurrency !== undefined
+          ? { defaultCurrency: dto.defaultCurrency }
+          : {}),
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        defaultCurrency: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
   }

@@ -4,8 +4,8 @@ export const categorySelect = {
   id: true,
   name: true,
   type: true,
-  color: true,
-  icon: true,
+  colorKey: true,
+  iconKey: true,
 } satisfies Prisma.CategorySelect;
 
 export type CategoryResponse = Prisma.CategoryGetPayload<{

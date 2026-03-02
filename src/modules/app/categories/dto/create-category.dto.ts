@@ -1,21 +1,30 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { CategoryType } from '@prisma/client';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import {
+  CategoryIconKey,
+  CategoryColorKey,
+} from 'src/common/constants/category-presets';
 
 export class CreateCategoryDto {
   @IsString()
-  @ApiProperty()
-  name: string;
+  @IsNotEmpty()
+  @MaxLength(40)
+  name!: string;
 
   @IsEnum(CategoryType)
-  @ApiProperty({ enum: CategoryType })
-  type: CategoryType;
+  type!: CategoryType;
 
   @IsOptional()
-  @ApiPropertyOptional()
-  color: string;
+  @IsString()
+  iconKey?: CategoryIconKey;
 
   @IsOptional()
-  @ApiPropertyOptional()
-  icon: string;
+  @IsString()
+  colorKey?: CategoryColorKey;
 }

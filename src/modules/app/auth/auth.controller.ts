@@ -1,12 +1,48 @@
-import { Body, Controller, HttpCode, Post, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  Post,
+  Req,
+  Res,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { Public } from 'src/common/decorators/public.decorator';
 import { AuthResponseDto } from './dto/auth-response-dto';
-import { Response } from 'express';
+import { Response, Request } from 'express';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { AuthUser } from './jwt.strategy';
+import { PrismaService } from 'src/modules/prisma/prisma.service';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private auth: AuthService) {}
+  constructor(
+    private auth: AuthService,
+    private prisma: PrismaService,
+  ) {}
+
+  private setAuthCookies(
+    res: Response,
+    accessToken: string,
+    refreshToken: string,
+  ) {
+    res.cookie('access_token', accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 15 * 60 * 1000,
+    });
+
+    res.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/auth/refresh',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    });
+  }
 
   @Post('login')
   @HttpCode(200)
@@ -15,19 +51,12 @@ export class AuthController {
     @Body() body: { email: string; password: string },
     @Res({ passthrough: true }) res: Response,
   ) {
-    console.log('Login attempt for email:', body.email);
-    const { accessToken, user } = await this.auth.login(
+    const { accessToken, user, refreshToken } = await this.auth.login(
       body.email,
       body.password,
     );
 
-    res.cookie('access_token', accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      sameSite: 'lax',
-      path: '/',
-    });
+    this.setAuthCookies(res, accessToken, refreshToken);
 
     return { user };
   }
@@ -35,7 +64,7 @@ export class AuthController {
   @Post('register')
   @HttpCode(201)
   @Public()
-  register(
+  async register(
     @Body()
     body: {
       email: string;
@@ -43,23 +72,61 @@ export class AuthController {
       firstName: string;
       lastName: string;
     },
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
-    return this.auth.register(
+    const { accessToken, user, refreshToken } = await this.auth.register(
       body.email,
       body.password,
       body.firstName,
       body.lastName,
     );
+
+    this.setAuthCookies(res, accessToken, refreshToken);
+
+    return { user, accessToken, refreshToken };
   }
 
   @Post('logout')
-  logout(@Res({ passthrough: true }) res: Response) {
+  async logout(
+    @Res({ passthrough: true }) res: Response,
+    @CurrentUser() user: AuthUser,
+  ) {
     res.clearCookie('access_token', {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
     });
 
+    res.clearCookie('refresh_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/auth/refresh',
+    });
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        refreshTokenHash: null,
+      },
+    });
+
     return { message: 'Logged out' };
+  }
+
+  @Post('refresh')
+  @HttpCode(200)
+  @Public()
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const refreshToken = req.cookies?.refresh_token;
+    if (!refreshToken) throw new UnauthorizedException();
+
+    const { accessToken, refreshToken: newRefreshToken } =
+      await this.auth.refresh(refreshToken);
+
+    this.setAuthCookies(res, accessToken, newRefreshToken);
   }
 }

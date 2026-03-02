@@ -8,11 +8,13 @@ import { AuthService } from './auth.service';
 import { HashService } from 'src/modules/crypto/hash.service';
 import { AuthController } from './auth.controller';
 import { ConfigService } from '@nestjs/config';
+import { PrismaModule } from 'src/modules/prisma/prisma.module';
 
 @Module({
   imports: [
     PassportModule,
-    // Это нужно для того, чтобы можно было инжектить JwtService в AuthService. JwtModule предоставляет JwtService, который используется для создания и проверки JWT токенов. Мы настраиваем JwtModule асинхронно, чтобы иметь доступ к ConfigService для получения секрета из переменных окружения.
+    PrismaModule,
+
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

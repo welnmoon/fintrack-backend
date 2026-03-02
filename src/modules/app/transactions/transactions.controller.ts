@@ -21,4 +21,9 @@ export class TransactionsController {
   getUserTransactions(@CurrentUser() user: AuthUser) {
     return this.transactionsService.getUserTransactions(user.id);
   }
+
+  @Get('last-month-summary')
+  getLastMonthIncomeExpense(@CurrentUser() user: AuthUser) {
+    return this.transactionsService.getCurrentMonthIncomeExpense(user.id);
+  }
 }

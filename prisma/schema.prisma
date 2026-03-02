@@ -45,9 +45,13 @@ model User {
   lastName     String?
   email        String    @unique
   passwordHash String
+  refreshTokenHash String?
   role         UserRole  @default(USER)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+
+
+  defaultCurrency Currency? @default(KZT)
 
   accounts     Account[]
   categories   Category[]
@@ -55,7 +59,6 @@ model User {
   transfers    Transfer[]
 }
 
-// Account - это источник или назначение денег. Например, наличные, банковский счет, кредитная карта и т.д.
 model Account { 
   id             String      @id @default(uuid())
   userId         String
@@ -77,14 +80,13 @@ model Account {
   @@unique([userId, name])
 }
 
-// Category - это классификация транзакций. Например, зарплата, продукты, развлечения и т.д. Категории могут быть двух типов: доходы и расходы. Транзакция может быть связана только с одной категорией, но категория может быть связана с несколькими транзакциями.
 model Category {
   id        String       @id @default(uuid())
   userId    String
   name      String
   type      CategoryType
-  color     String?
-  icon      String?
+  colorKey  String?
+  iconKey   String?
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
@@ -95,7 +97,6 @@ model Category {
   @@unique([userId, type, name])
 }
 
-// Transaction - это запись о финансовой операции. Она связана с одним аккаунтом и одной категорией. Транзакция может быть двух типов: доход или расход. Например, если пользователь получает зарплату, то это будет транзакция типа доход, связанная с категорией "зарплата" и аккаунтом "банковский счет". Если пользователь покупает продукты, то это будет транзакция типа расход, связанная с категорией "продукты" и аккаунтом "наличные".
 model Transaction {
   id         String          @id @default(uuid())
   userId     String
@@ -103,21 +104,9 @@ model Transaction {
   categoryId String?
   type       TransactionType
 
-  // posted amount: сумма, которая влияет на баланс счета,
-  // всегда в валюте account.currency
   amount     Decimal         @db.Decimal(18, 2)
-
-  // original input: как ввёл пользователь (может быть в другой валюте),
-  // заполняется только если originalCurrency != account.currency
   originalAmount   Decimal?  @db.Decimal(18, 2)
-
-  // валюта ввода пользователя (KZT/USD/EUR),
-  // нужна, чтобы понимать смысл exchangeRate и правильно показывать в UI
   originalCurrency Currency?
-
-  // snapshot курса на момент операции (вариант A):
-  // "account.currency за 1 originalCurrency"
-  // пример: account=USD, original=KZT => exchangeRate = USD за 1 KZT (0.002...)
   exchangeRate     Decimal?  @db.Decimal(18, 8)
 
   occurredAt DateTime
@@ -140,17 +129,9 @@ model Transfer {
   fromAccountId String
   toAccountId   String
 
-  // сколько списали со счета-источника, в валюте fromAccount.currency
   fromAmount   Decimal @db.Decimal(18, 2)
-
-  // сколько зачислили на счет-получатель, в валюте toAccount.currency
   toAmount     Decimal @db.Decimal(18, 2)
-
-  // snapshot курса на момент перевода (вариант A):
-  // "toAccount.currency за 1 fromAccount.currency"
-  // пример: from=KZT, to=USD => exchangeRate = USD за 1 KZT (0.002...)
   exchangeRate Decimal @db.Decimal(18, 8)
-
   occurredAt    DateTime
   note          String?
   createdAt     DateTime @default(now())

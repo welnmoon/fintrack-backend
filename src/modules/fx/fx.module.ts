@@ -4,10 +4,7 @@ import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 
 @Module({
-  imports: [
-    HttpModule,
-    CacheModule.register({ ttl: 600 }), // 10 минут
-  ],
+  imports: [HttpModule, CacheModule.register({ ttl: 3600 })],
   providers: [FxService],
   exports: [FxService],
 })
