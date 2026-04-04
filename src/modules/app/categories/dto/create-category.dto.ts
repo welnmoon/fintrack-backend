@@ -6,10 +6,10 @@ import {
   MaxLength,
 } from 'class-validator';
 import { CategoryType } from '@prisma/client';
-import {
+import type {
   CategoryIconKey,
   CategoryColorKey,
-} from 'src/common/constants/category-presets';
+} from '../../../../common/constants/category-presets';
 
 export class CreateCategoryDto {
   @IsString()

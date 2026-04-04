@@ -8,12 +8,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { Public } from 'src/common/decorators/public.decorator';
+import { Public } from '../../../common/decorators/public.decorator';
 import { AuthResponseDto } from './dto/auth-response-dto';
-import { Response, Request } from 'express';
-import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import { AuthUser } from './jwt.strategy';
-import { PrismaService } from 'src/modules/prisma/prisma.service';
+import type { Request, Response } from 'express';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import type { AuthUser } from './jwt.strategy';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Controller('auth')
 export class AuthController {

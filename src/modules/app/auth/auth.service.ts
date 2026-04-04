@@ -1,9 +1,9 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { HashService } from 'src/modules/crypto/hash.service';
-import { PrismaService } from 'src/modules/prisma/prisma.service';
+import { HashService } from '../../crypto/hash.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { AuthResponseDto } from './dto/auth-response-dto';
-import { AuthUser } from './jwt.strategy';
+import type { AuthUser } from './jwt.strategy';
 
 type JwtRefreshPayload = {
   sub: string;

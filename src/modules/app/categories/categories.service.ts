@@ -13,16 +13,35 @@ import {
   INCOME_ICON_PRESETS,
   ICON_KEYS_BY_TYPE,
 } from '../../../common/constants/category-presets';
-import { CategoryType } from '@prisma/client';
-import { getCurrentMonthRange } from 'src/common/helpers/get-current-month-range';
+import { CategoryType, Currency } from '@prisma/client';
+import { getPeriodRange } from '../../../common/helpers/get-current-month-range';
+import { FxService } from '../../fx/fx.service';
+
+export type ExpensePieItem = {
+  id: string;
+  name: string;
+  iconKey: string | null;
+  colorKey: string | null;
+  amount: number;
+};
+
+export type ExpensePieResult = {
+  items: ExpensePieItem[];
+  currency: Currency;
+  fxUnavailable: boolean;
+  fxStale: boolean;
+};
 
 @Injectable()
 export class CategoriesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private fx: FxService,
+  ) {}
 
   private validatePresets(
     type: CategoryType,
-    dto: { iconKey?: string; colorKey?: string },
+    dto: { iconKey?: string | null; colorKey?: string | null },
   ) {
     if (dto.iconKey) {
       const allowed = ICON_KEYS_BY_TYPE[type];
@@ -149,39 +168,126 @@ export class CategoriesService {
     limit: number,
     periodStart?: Date,
     periodEnd?: Date,
-  ) {
-    const periodStartDate = periodStart ?? getCurrentMonthRange().periodStart;
-    const periodEndDate = periodEnd ?? getCurrentMonthRange().periodEnd;
+  ): Promise<ExpensePieResult> {
+    const currentMonthRange = getPeriodRange('month');
+    const periodStartDate = periodStart ?? currentMonthRange.periodStart;
+    const periodEndDate = periodEnd ?? currentMonthRange.periodEnd;
 
-    const grouped = await this.prisma.transaction.groupBy({
-      by: ['categoryId'],
-      where: {
-        userId,
-        type: 'EXPENSE',
-        categoryId: { not: null },
-        occurredAt: { gte: periodStartDate, lte: periodEndDate },
-      },
-      _sum: { amount: true },
-      orderBy: { _sum: { amount: 'desc' } },
-    });
+    const [user, expenses] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { defaultCurrency: true },
+      }),
+      this.prisma.transaction.findMany({
+        where: {
+          userId,
+          type: 'EXPENSE',
+          categoryId: { not: null },
+          occurredAt: { gte: periodStartDate, lte: periodEndDate },
+        },
+        select: {
+          categoryId: true,
+          amount: true,
+          account: {
+            select: {
+              currency: true,
+            },
+          },
+        },
+      }),
+    ]);
 
-    if (!grouped.length) return [];
+    const targetCurrency = (user?.defaultCurrency ?? 'KZT') as Currency;
 
-    const categoryIds = grouped.map((g) => g.categoryId!) as string[];
+    if (!expenses.length) {
+      return {
+        items: [],
+        currency: targetCurrency,
+        fxUnavailable: false,
+        fxStale: false,
+      };
+    }
+
+    const totalsByCategoryCurrency = new Map<
+      string,
+      Partial<Record<Currency, number>>
+    >();
+
+    for (const row of expenses) {
+      if (!row.categoryId) continue;
+
+      const categoryTotals =
+        totalsByCategoryCurrency.get(row.categoryId) ??
+        ({} as Partial<Record<Currency, number>>);
+
+      const currency = row.account.currency as Currency;
+      categoryTotals[currency] = (categoryTotals[currency] ?? 0) + Number(row.amount);
+      totalsByCategoryCurrency.set(row.categoryId, categoryTotals);
+    }
+
+    const usedCurrencies = new Set<Currency>();
+    for (const categoryTotals of totalsByCategoryCurrency.values()) {
+      for (const currency of Object.keys(categoryTotals) as Currency[]) {
+        usedCurrencies.add(currency);
+      }
+    }
+
+    const conversionRates = new Map<Currency, number>();
+    conversionRates.set(targetCurrency, 1);
+
+    let fxUnavailable = false;
+    let fxStale = false;
+
+    for (const currency of usedCurrencies) {
+      if (currency === targetCurrency) continue;
+
+      try {
+        const { rate, stale } = await this.fx.getRateWithMeta(
+          currency,
+          targetCurrency,
+        );
+        conversionRates.set(currency, rate);
+        if (stale) {
+          fxStale = true;
+        }
+      } catch {
+        fxUnavailable = true;
+      }
+    }
+
+    const categoryIds = [...totalsByCategoryCurrency.keys()];
 
     const categories = await this.prisma.category.findMany({
       where: { userId, id: { in: categoryIds } },
       select: { id: true, name: true, iconKey: true, colorKey: true },
     });
 
-    const merged = grouped.map((g) => {
-      const cat = categories.find((c) => c.id === g.categoryId);
+    const merged: ExpensePieItem[] = categoryIds.map((categoryId) => {
+      const categoryTotals = totalsByCategoryCurrency.get(categoryId) ?? {};
+      const category = categories.find((c) => c.id === categoryId);
+
+      let amount = 0;
+
+      if (fxUnavailable) {
+        // Fallback mode: keep raw sums (mixed currencies) and surface fxUnavailable flag.
+        for (const currency of Object.keys(categoryTotals) as Currency[]) {
+          amount += Number(categoryTotals[currency] ?? 0);
+        }
+      } else {
+        for (const currency of Object.keys(categoryTotals) as Currency[]) {
+          const raw = Number(categoryTotals[currency] ?? 0);
+          const rate = conversionRates.get(currency);
+          if (rate === undefined) continue;
+          amount += raw * rate;
+        }
+      }
+
       return {
-        id: g.categoryId!,
-        name: cat?.name ?? 'Unknown',
-        iconKey: cat?.iconKey ?? null,
-        colorKey: cat?.colorKey ?? null,
-        amount: Number(g._sum.amount ?? 0),
+        id: categoryId,
+        name: category?.name ?? 'Unknown',
+        iconKey: category?.iconKey ?? null,
+        colorKey: category?.colorKey ?? null,
+        amount: Number(amount.toFixed(2)),
       };
     });
 
@@ -200,7 +306,12 @@ export class CategoriesService {
       });
     }
 
-    return top;
+    return {
+      items: top,
+      currency: targetCurrency,
+      fxUnavailable,
+      fxStale,
+    };
   }
 
   async presets() {

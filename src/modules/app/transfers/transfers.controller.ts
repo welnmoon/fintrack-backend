@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Patch, Post, Put } from '@nestjs/common';
 import { TransfersService } from './transfers.service';
-import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import { AuthUser } from '../auth/jwt.strategy';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import type { AuthUser } from '../auth/jwt.strategy';
 import { CreateTransferDto } from './dto/create-transfer.dto';
 
 @Controller('transfers')

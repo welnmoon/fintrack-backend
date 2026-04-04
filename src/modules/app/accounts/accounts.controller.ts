@@ -1,5 +1,5 @@
-import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import { AuthUser } from '../auth/jwt.strategy';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import type { AuthUser } from '../auth/jwt.strategy';
 import { Get, Param, Post, Controller, Body } from '@nestjs/common';
 import { AccountsService } from './accounts.service';
 import { CreateAccountDto } from './dto/create-account.dto';

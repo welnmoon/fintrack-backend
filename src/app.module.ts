@@ -8,6 +8,7 @@ import { CategoriesModule } from './modules/app/categories/categories.module';
 import { TransactionsModule } from './modules/app/transactions/transactions.module';
 import { TransfersModule } from './modules/app/transfers/transfers.module';
 import { DashboardModule } from './modules/app/dashboard/dashboard.module';
+import { ForexModule } from './modules/forex/forex.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { DashboardModule } from './modules/app/dashboard/dashboard.module';
     TransactionsModule,
     TransfersModule,
     DashboardModule,
+    ForexModule,
   ],
 })
 export class AppModule {}

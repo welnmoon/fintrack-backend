@@ -1,20 +1,21 @@
-import { MAX_ACCOUNTS_PER_USER } from 'src/common/constants/account';
+import { MAX_ACCOUNTS_PER_USER } from '../../../common/constants/account';
 import {
   BadRequestException,
   ConflictException,
   Injectable,
 } from '@nestjs/common';
-import { PrismaService } from 'src/modules/prisma/prisma.service';
+import { Currency } from '@prisma/client';
+import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { calcAccountBalance } from './lib/calc-account-balance';
-import { FxService } from 'src/modules/fx/fx.service';
-import { Currency } from '@prisma/client';
+import { MoneyConversionService } from '../../fx/money-conversion.service';
+
 @Injectable()
 export class AccountsService {
   private prisma: PrismaService;
   constructor(
     prisma: PrismaService,
-    private fx: FxService,
+    private readonly moneyConversionService: MoneyConversionService,
   ) {
     this.prisma = prisma;
   }
@@ -107,30 +108,21 @@ export class AccountsService {
       {} as Record<Currency, number>,
     );
 
-    try {
-      const converted = await Promise.all(
-        balances.map(async (x) => {
-          const r = await this.fx.convert(x.currency, target, x.balance);
-          return r.convertedAmount;
-        }),
-      );
+    const summary = await this.moneyConversionService.sumItems(
+      balances.map((item) => ({
+        amount: item.balance,
+        currency: item.currency as Currency,
+      })),
+      target,
+    );
 
-      const total = converted.reduce((s, n) => s + n, 0);
-
-      return {
-        currency: target,
-        total,
-        fxUnavailable: false,
-        totalsByCurrency,
-      };
-    } catch (e) {
-      return {
-        currency: target,
-        total: null,
-        fxUnavailable: true,
-        totalsByCurrency,
-      };
-    }
+    return {
+      currency: target,
+      total: summary.total,
+      fxUnavailable: summary.fxUnavailable,
+      fxStale: summary.fxStale,
+      totalsByCurrency,
+    };
   }
 
   async getAccountById(userId: string, accountId: string) {
@@ -195,7 +187,7 @@ export class AccountsService {
 
       return account;
     } catch (e) {
-      console.log('error creating account', e?.code, e?.meta, e);
+      // console.log('error creating account', e?.code, e?.meta, e);
       if (e instanceof BadRequestException) {
         throw e;
       }

@@ -10,8 +10,8 @@ import {
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import { AuthUser } from '../auth/jwt.strategy';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import type { AuthUser } from '../auth/jwt.strategy';
 
 @Controller('categories')
 export class CategoriesController {

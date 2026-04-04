@@ -3,10 +3,10 @@ import {
   ConflictException,
   Injectable,
 } from '@nestjs/common';
-import { PrismaService } from 'src/modules/prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { HashService } from 'src/modules/crypto/hash.service';
+import { HashService } from '../../crypto/hash.service';
 
 @Injectable()
 export class UsersService {

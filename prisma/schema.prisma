@@ -145,3 +145,42 @@ model Transfer {
   @@index([fromAccountId, occurredAt])
   @@index([toAccountId, occurredAt])
 }
+
+model ForexCandle {
+  symbol   String
+  interval String
+  time     DateTime
+
+  open   Decimal  @db.Decimal(18, 8)
+  high   Decimal  @db.Decimal(18, 8)
+  low    Decimal  @db.Decimal(18, 8)
+  close  Decimal  @db.Decimal(18, 8)
+  volume Decimal? @db.Decimal(18, 8)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([symbol, interval, time])
+  @@index([symbol, interval, time])
+}
+
+model ForexSyncState {
+  symbol   String
+  interval String
+
+  backfillCompleted Boolean   @default(false)
+  oldestCandleTime  DateTime?
+  lastBackfillAt    DateTime?
+
+  sourceUnavailable   Boolean  @default(false)
+  staleSince          DateTime?
+  lastSuccessfulSyncAt DateTime?
+  lastFailedSyncAt     DateTime?
+  lastErrorMessage     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([symbol, interval])
+  @@index([symbol, interval])
+}

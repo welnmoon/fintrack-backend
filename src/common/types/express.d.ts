@@ -1,4 +1,4 @@
-import { AuthUser } from '../../modules/app/auth/jwt.strategy';
+import type { AuthUser } from '../../modules/app/auth/jwt.strategy';
 
 declare global {
   namespace Express {

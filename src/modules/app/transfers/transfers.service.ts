@@ -3,9 +3,9 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { PrismaService } from 'src/modules/prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTransferDto } from './dto/create-transfer.dto';
-import { FxService } from 'src/modules/fx/fx.service';
+import { FxService } from '../../fx/fx.service';
 import { TransferResponse } from './types/transfer-response';
 
 @Injectable()

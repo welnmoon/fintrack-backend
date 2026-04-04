@@ -1,14 +1,17 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import { PrismaService } from 'src/modules/prisma/prisma.service';
+import { Currency, TransactionType } from '@prisma/client';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { CategoriesService } from '../categories/categories.service';
-import { getCurrentMonthRange } from 'src/common/helpers/get-current-month-range';
+import { getPeriodRange } from '../../../common/helpers/get-current-month-range';
+import { PrismaService } from '../../prisma/prisma.service';
+import { MoneyConversionService } from '../../fx/money-conversion.service';
 
 @Injectable()
 export class TransactionsService {
   constructor(
     private prisma: PrismaService,
     private categoriesService: CategoriesService,
+    private readonly moneyConversionService: MoneyConversionService,
   ) {}
 
   async create(dto: CreateTransactionDto, userId: string) {
@@ -49,10 +52,34 @@ export class TransactionsService {
     return tr;
   }
 
-  async getUserTransactions(userId: string) {
+  async getUserTransactions(
+    userId: string,
+    typeFilter?: TransactionType[],
+    periodStart?: Date,
+    periodEnd?: Date,
+  ) {
     return this.prisma.transaction.findMany({
-      where: { userId },
+      where: {
+        userId,
+        ...(periodStart || periodEnd
+          ? {
+              occurredAt: {
+                ...(periodStart ? { gte: periodStart } : {}),
+                ...(periodEnd ? { lte: periodEnd } : {}),
+              },
+            }
+          : {}),
+
+        ...(typeFilter?.length
+          ? {
+              type: {
+                in: typeFilter,
+              },
+            }
+          : {}),
+      },
       orderBy: { occurredAt: 'desc' },
+
       select: {
         id: true,
         userId: true,
@@ -77,7 +104,7 @@ export class TransactionsService {
   }
 
   async getCurrentMonthIncomeExpense(userId: string) {
-    const { periodEnd, periodStart } = getCurrentMonthRange();
+    const { periodEnd, periodStart } = getPeriodRange('month');
 
     const sums = await this.prisma.transaction.groupBy({
       by: ['type'],
@@ -106,6 +133,53 @@ export class TransactionsService {
       income: Number(income),
       expense: Number(expense),
       ...topCategories,
+    };
+  }
+
+  async getUserTransactionsConverted(
+    userId: string,
+    typeFilter?: TransactionType[],
+    periodStart?: Date,
+    periodEnd?: Date,
+  ) {
+    const [user, transactions] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { defaultCurrency: true },
+      }),
+      this.getUserTransactions(userId, typeFilter, periodStart, periodEnd),
+    ]);
+
+    const targetCurrency = (user?.defaultCurrency ?? 'KZT') as Currency;
+
+    const converted = await this.moneyConversionService.convertItems(
+      transactions.map((transaction) => ({
+        ...transaction,
+        amount: Number(transaction.amount),
+        currency: transaction.account.currency as Currency,
+      })),
+      targetCurrency,
+    );
+
+    return {
+      currency: targetCurrency,
+      fxUnavailable: converted.fxUnavailable,
+      fxStale: converted.fxStale,
+      items: converted.items.map(
+        ({
+          amount,
+          convertedAmount,
+          currency,
+          targetCurrency,
+          ...transaction
+        }) => ({
+          ...transaction,
+          amount,
+          convertedAmount,
+          originalCurrency: currency,
+          currency: targetCurrency,
+        }),
+      ),
     };
   }
 
