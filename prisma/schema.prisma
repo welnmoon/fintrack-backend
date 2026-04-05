@@ -36,6 +36,15 @@ enum CategoryType {
 enum TransactionType {
   INCOME
   EXPENSE
+  ADJUSTMENT
+}
+
+enum Emotion {
+  NEUTRAL
+  HAPPY
+  IMPULSIVE
+  STRESS
+  REGRET
 }
 
 model User {
@@ -44,9 +53,13 @@ model User {
   lastName     String?
   email        String    @unique
   passwordHash String
+  refreshTokenHash String?
   role         UserRole  @default(USER)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+
+
+  defaultCurrency Currency? @default(KZT)
 
   accounts     Account[]
   categories   Category[]
@@ -54,7 +67,6 @@ model User {
   transfers    Transfer[]
 }
 
-// Account - это источник или назначение денег. Например, наличные, банковский счет, кредитная карта и т.д.
 model Account { 
   id             String      @id @default(uuid())
   userId         String
@@ -63,6 +75,7 @@ model Account {
   name           String
   type           AccountType
   currency       Currency
+  backgroundKey  String      @default("aurora-teal")
   initialBalance Decimal     @default(0.0) @db.Decimal(18, 2)
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
@@ -81,8 +94,8 @@ model Category {
   userId    String
   name      String
   type      CategoryType
-  color     String?
-  icon      String?
+  colorKey  String?
+  iconKey   String?
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
@@ -97,21 +110,28 @@ model Transaction {
   id         String          @id @default(uuid())
   userId     String
   accountId  String
-  categoryId String
+  categoryId String?
   type       TransactionType
+  emotion    Emotion?
+
   amount     Decimal         @db.Decimal(18, 2)
+  originalAmount   Decimal?  @db.Decimal(18, 2)
+  originalCurrency Currency?
+  exchangeRate     Decimal?  @db.Decimal(18, 8)
+
   occurredAt DateTime
   note       String?
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
 
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  account  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@index([userId, occurredAt])
   @@index([accountId, occurredAt])
   @@index([categoryId, occurredAt])
+  @@index([userId, emotion])
 }
 
 model Transfer {
@@ -119,10 +139,14 @@ model Transfer {
   userId        String
   fromAccountId String
   toAccountId   String
-  amount        Decimal  @db.Decimal(18, 2)
+
+  fromAmount   Decimal @db.Decimal(18, 2)
+  toAmount     Decimal @db.Decimal(18, 2)
+  exchangeRate Decimal @db.Decimal(18, 8)
   occurredAt    DateTime
   note          String?
   createdAt     DateTime @default(now())
+  isCanceled    Boolean  @default(false)
 
   user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   fromAccount Account @relation("TransferFromAccount", fields: [fromAccountId], references: [id], onDelete: Cascade)
@@ -131,4 +155,43 @@ model Transfer {
   @@index([userId, occurredAt])
   @@index([fromAccountId, occurredAt])
   @@index([toAccountId, occurredAt])
+}
+
+model ForexCandle {
+  symbol   String
+  interval String
+  time     DateTime
+
+  open   Decimal  @db.Decimal(18, 8)
+  high   Decimal  @db.Decimal(18, 8)
+  low    Decimal  @db.Decimal(18, 8)
+  close  Decimal  @db.Decimal(18, 8)
+  volume Decimal? @db.Decimal(18, 8)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([symbol, interval, time])
+  @@index([symbol, interval, time])
+}
+
+model ForexSyncState {
+  symbol   String
+  interval String
+
+  backfillCompleted Boolean   @default(false)
+  oldestCandleTime  DateTime?
+  lastBackfillAt    DateTime?
+
+  sourceUnavailable   Boolean  @default(false)
+  staleSince          DateTime?
+  lastSuccessfulSyncAt DateTime?
+  lastFailedSyncAt     DateTime?
+  lastErrorMessage     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([symbol, interval])
+  @@index([symbol, interval])
 }

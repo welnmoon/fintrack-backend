@@ -3,6 +3,30 @@ import { ConfigService } from '@nestjs/config'; // нужно для получ�
 import { PrismaPg } from '@prisma/adapter-pg'; // npm install @prisma/adapter-pg
 import { PrismaClient } from '@prisma/client';
 
+function normalizeConnectionString(url: string) {
+  try {
+    const parsed = new URL(url);
+    const sslmode = parsed.searchParams.get('sslmode')?.toLowerCase();
+
+    if (parsed.searchParams.has('uselibpqcompat')) {
+      return parsed.toString();
+    }
+
+    if (
+      sslmode === 'prefer' ||
+      sslmode === 'require' ||
+      sslmode === 'verify-ca'
+    ) {
+      parsed.searchParams.set('sslmode', 'verify-full');
+      return parsed.toString();
+    }
+
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 @Injectable()
 export class PrismaService
   extends PrismaClient
@@ -17,7 +41,9 @@ export class PrismaService
     }
 
     super({
-      adapter: new PrismaPg({ connectionString: url }),
+      adapter: new PrismaPg({
+        connectionString: normalizeConnectionString(url),
+      }),
     });
   }
 
