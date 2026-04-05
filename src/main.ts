@@ -59,9 +59,10 @@ async function bootstrap() {
     .setVersion('1.0')
     .addBearerAuth()
     .build();
+  const frontendUrl = process.env.FRONTEND_URL?.replace(/\/+$/, '');
   app.use(cookieParser());
   app.enableCors({
-    origin: process.env.FRONTEND_URL,
+    origin: frontendUrl ?? true,
     credentials: true,
   });
 
