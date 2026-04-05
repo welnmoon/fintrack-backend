@@ -69,7 +69,7 @@ async function bootstrap() {
   SwaggerModule.setup('docs', app, document);
 
   const port = await resolvePort();
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
 
   if (!process.env.PORT && port !== 3000) {
     logger.warn(`Port 3000 is busy. Started on port ${port} instead.`);
