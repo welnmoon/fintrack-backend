@@ -1,4 +1,4 @@
-import { TransactionType } from '@prisma/client';
+import { Emotion, TransactionType } from '@prisma/client';
 import {
   IsDateString,
   IsEnum,
@@ -28,4 +28,8 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsEnum(Emotion)
+  emotion?: Emotion;
 }

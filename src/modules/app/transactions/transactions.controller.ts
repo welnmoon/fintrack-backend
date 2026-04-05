@@ -1,8 +1,17 @@
-import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/jwt.strategy';
 import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
+import { UpdateTransactionDto } from './dto/update-transaction.dto';
 
 @Controller('transactions')
 export class TransactionsController {
@@ -15,6 +24,15 @@ export class TransactionsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.transactionsService.create(dto, user.id);
+  }
+
+  @Patch(':id')
+  updateTransaction(
+    @Param('id') id: string,
+    @Body() dto: UpdateTransactionDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.transactionsService.update(id, dto, user.id);
   }
 
   @Get()

@@ -72,7 +72,10 @@ export class ForecastService {
 
     const monthAvg = spentSoFar / Math.max(daysPassed, 1); // Средний расход в день по месяцу
 
-    const recentPeriodDays = Math.min(daysPassed, 7);
+    const recentPeriodDays = this.getInclusiveDaysCount(
+      last7DaysRange.periodStart,
+      last7DaysRange.periodEnd,
+    );
     const recent7Avg = recent7Spent / Math.max(recentPeriodDays, 1); //Средний расход в день по свежему периоду:
 
     const blendedDailyExpense = monthAvg * 0.4 + recent7Avg * 0.6;
@@ -97,6 +100,19 @@ export class ForecastService {
       basedOnTransactionsCount: transactionInThisMonth.items.length,
       confidence: this.getConfidence(transactionInThisMonth.items.length),
     };
+  }
+
+  private getInclusiveDaysCount(periodStart: Date, periodEnd: Date) {
+    const start = new Date(periodStart);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(periodEnd);
+    end.setHours(0, 0, 0, 0);
+
+    const diffMs = end.getTime() - start.getTime();
+    const msInDay = 24 * 60 * 60 * 1000;
+
+    return Math.floor(diffMs / msInDay) + 1;
   }
 
   private getConfidence(transactionsCount: number): 'low' | 'medium' | 'high' {

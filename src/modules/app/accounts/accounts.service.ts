@@ -1,4 +1,5 @@
 import { MAX_ACCOUNTS_PER_USER } from '../../../common/constants/account';
+import { DEFAULT_ACCOUNT_BACKGROUND_KEY } from '../../../common/constants/account-backgrounds';
 import {
   BadRequestException,
   ConflictException,
@@ -9,6 +10,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { calcAccountBalance } from './lib/calc-account-balance';
 import { MoneyConversionService } from '../../fx/money-conversion.service';
+import { SetAccountBalanceDto } from './dto/set-account-balance.dto';
+import { UpdateAccountBackgroundDto } from './dto/update-account-background.dto';
 
 @Injectable()
 export class AccountsService {
@@ -55,6 +58,7 @@ export class AccountsService {
         name: account.name,
         currency: account.currency,
         type: account.type,
+        backgroundKey: account.backgroundKey,
         accountNumber: account.accountNumber,
         initialBalance: Number(account.initialBalance),
         balance,
@@ -157,6 +161,7 @@ export class AccountsService {
             name: accountName,
             type: dto.type,
             currency: dto.currency,
+            backgroundKey: dto.backgroundKey ?? DEFAULT_ACCOUNT_BACKGROUND_KEY,
           },
         });
 
@@ -169,6 +174,7 @@ export class AccountsService {
             accountNumber: true,
             currency: true,
             createdAt: true,
+            backgroundKey: true,
             id: true,
             name: true,
             initialBalance: true,
@@ -196,11 +202,152 @@ export class AccountsService {
   }
 
   async getAccountOptions(userId: string) {
-    console.log('get acc options: ', userId);
     return this.prisma.account.findMany({
       where: { userId },
-      select: { id: true, name: true, type: true, currency: true },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        currency: true,
+        backgroundKey: true,
+      },
       orderBy: { name: 'asc' },
     });
+  }
+
+  async updateAccountBackground(
+    userId: string,
+    accountId: string,
+    dto: UpdateAccountBackgroundDto,
+  ) {
+    const account = await this.prisma.account.findFirst({
+      where: { id: accountId, userId },
+      select: { id: true },
+    });
+
+    if (!account) {
+      throw new BadRequestException('Account not found');
+    }
+
+    return this.prisma.account.update({
+      where: { id: accountId },
+      data: {
+        backgroundKey: dto.backgroundKey,
+      },
+      select: {
+        id: true,
+        backgroundKey: true,
+      },
+    });
+  }
+
+  async setAccountBalance(
+    userId: string,
+    accountId: string,
+    dto: SetAccountBalanceDto,
+  ) {
+    const account = await this.prisma.account.findFirst({
+      where: { id: accountId, userId },
+      select: { id: true },
+    });
+
+    if (!account) {
+      throw new BadRequestException('Account not found');
+    }
+
+    const [latestTransaction, latestTransferOut, latestTransferIn] =
+      await Promise.all([
+        this.prisma.transaction.findFirst({
+          where: { userId, accountId },
+          orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
+          select: { occurredAt: true },
+        }),
+        this.prisma.transfer.findFirst({
+          where: { userId, fromAccountId: accountId, isCanceled: false },
+          orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
+          select: { occurredAt: true },
+        }),
+        this.prisma.transfer.findFirst({
+          where: { userId, toAccountId: accountId, isCanceled: false },
+          orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
+          select: { occurredAt: true },
+        }),
+      ]);
+
+    const nowMs = Date.now();
+    const latestActivityMs = Math.max(
+      latestTransaction?.occurredAt.getTime() ?? 0,
+      latestTransferOut?.occurredAt.getTime() ?? 0,
+      latestTransferIn?.occurredAt.getTime() ?? 0,
+    );
+
+    const occurredAt = new Date(
+      latestActivityMs >= nowMs ? latestActivityMs + 1 : nowMs,
+    );
+
+    return this.prisma.transaction.create({
+      data: {
+        userId,
+        accountId,
+        categoryId: null,
+        type: 'ADJUSTMENT',
+        amount: dto.amount,
+        occurredAt,
+        note: dto.note?.trim() || null,
+      },
+      select: {
+        id: true,
+        userId: true,
+        accountId: true,
+        categoryId: true,
+        type: true,
+        amount: true,
+        occurredAt: true,
+        note: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  async deleteAccount(userId: string, accountId: string) {
+    const account = await this.prisma.account.findFirst({
+      where: { id: accountId, userId },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    if (!account) {
+      throw new BadRequestException('Account not found');
+    }
+
+    const [transactionsCount, transfersCount] = await Promise.all([
+      this.prisma.transaction.count({
+        where: { userId, accountId },
+      }),
+      this.prisma.transfer.count({
+        where: {
+          userId,
+          OR: [{ fromAccountId: accountId }, { toAccountId: accountId }],
+        },
+      }),
+    ]);
+
+    if (transactionsCount > 0 || transfersCount > 0) {
+      throw new BadRequestException(
+        'Only empty accounts without transactions or transfers can be deleted',
+      );
+    }
+
+    await this.prisma.account.delete({
+      where: { id: accountId },
+    });
+
+    return {
+      id: account.id,
+      deleted: true,
+    };
   }
 }

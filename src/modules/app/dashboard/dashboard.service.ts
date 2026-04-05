@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { Currency, TransactionType } from '@prisma/client';
+import { Currency, type Emotion, TransactionType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { CategoriesService } from '../categories/categories.service';
 import { FxService } from '../../fx/fx.service';
+import { ForecastService } from '../../analytics/forecast/forecast.service';
 
 export type BalanceHistoryInterval = 'day' | 'week' | 'month';
 
@@ -24,6 +25,14 @@ type AccountEvent = {
   amount: number;
 };
 
+type EmotionSummaryCategory = {
+  emotion: Emotion;
+  categoryId: string;
+  categoryName: string;
+  count: number;
+  amount: number;
+};
+
 @Injectable()
 export class DashboardService {
   constructor(
@@ -32,6 +41,7 @@ export class DashboardService {
     private transactionService: TransactionsService,
     private categoriesService: CategoriesService,
     private fxService: FxService,
+    private forecastService: ForecastService,
   ) {}
 
   async getDashboard(
@@ -40,27 +50,88 @@ export class DashboardService {
     periodEnd?: Date,
     limit = 10,
   ) {
-    const accountsTotalBalance =
-      await this.accountService.getUserAccountsTotalBalance(userId);
-
-    const expenseAndIncomes =
-      await this.transactionService.getCurrentMonthIncomeExpense(userId);
-
-    const lastTransactions =
-      await this.transactionService.getLastTransactions(userId);
-
-    const expensePie = await this.categoriesService.getExpensePie(
-      userId,
-      limit,
-      periodStart,
-      periodEnd,
-    );
+    const [
+      accountsTotalBalance,
+      expenseAndIncomes,
+      lastTransactions,
+      expensePie,
+      forecast,
+      emotionsSummary,
+    ] = await Promise.all([
+      this.accountService.getUserAccountsTotalBalance(userId),
+      this.transactionService.getCurrentMonthIncomeExpense(userId),
+      this.transactionService.getLastTransactions(userId),
+      this.categoriesService.getExpensePie(userId, limit, periodStart, periodEnd),
+      this.forecastService.getCurrentMonthForecast(userId),
+      this.getEmotionsSummary(userId),
+    ]);
 
     return {
       accountsTotalBalance,
       expenseAndIncomes,
       lastTransactions,
       expensePie,
+      forecast,
+      emotionsSummary,
+    };
+  }
+
+  async getForecast(userId: string) {
+    return this.forecastService.getCurrentMonthForecast(userId);
+  }
+
+  async getEmotionsSummary(userId: string) {
+    const [allTransactions, expenseTransactions] = await Promise.all([
+      this.transactionService.getUserTransactions(userId),
+      this.transactionService.getUserTransactionsConverted(userId, ['EXPENSE']),
+    ]);
+
+    const emotionalTransactions = allTransactions.filter(
+      (transaction) => transaction.emotion !== null,
+    );
+    const expenseItemsWithEmotion = expenseTransactions.items.filter(
+      (transaction) => transaction.emotion !== null,
+    );
+
+    const emotionDistributionMap = new Map<Emotion, number>();
+    for (const transaction of emotionalTransactions) {
+      const emotion = transaction.emotion as Emotion;
+      emotionDistributionMap.set(
+        emotion,
+        (emotionDistributionMap.get(emotion) ?? 0) + 1,
+      );
+    }
+
+    const totalExpenseTransactions = expenseTransactions.items.length;
+    const impulsiveExpenses = expenseItemsWithEmotion.filter(
+      (transaction) => transaction.emotion === 'IMPULSIVE',
+    );
+    const regretExpenses = expenseItemsWithEmotion.filter(
+      (transaction) => transaction.emotion === 'REGRET',
+    );
+
+    return {
+      currency: expenseTransactions.currency,
+      fxUnavailable: expenseTransactions.fxUnavailable,
+      fxStale: expenseTransactions.fxStale,
+      totalTransactionsWithEmotion: emotionalTransactions.length,
+      impulsiveCount: emotionDistributionMap.get('IMPULSIVE') ?? 0,
+      regretCount: emotionDistributionMap.get('REGRET') ?? 0,
+      stressCount: emotionDistributionMap.get('STRESS') ?? 0,
+      impulsiveAmount: this.sumConvertedAmounts(impulsiveExpenses),
+      regretAmount: this.sumConvertedAmounts(regretExpenses),
+      emotionDistribution: [...emotionDistributionMap.entries()]
+        .map(([emotion, count]) => ({ emotion, count }))
+        .sort((left, right) => right.count - left.count),
+      impulsiveExpenseShare: this.calcShare(
+        impulsiveExpenses.length,
+        totalExpenseTransactions,
+      ),
+      regretExpenseShare: this.calcShare(
+        regretExpenses.length,
+        totalExpenseTransactions,
+      ),
+      topEmotionCategories: this.buildTopEmotionCategories(impulsiveExpenses),
     };
   }
 
@@ -322,6 +393,70 @@ export class DashboardService {
 
   private round2(value: number) {
     return Number(value.toFixed(2));
+  }
+
+  private calcShare(part: number, total: number) {
+    if (total <= 0) return 0;
+    return this.round2((part / total) * 100);
+  }
+
+  private sumConvertedAmounts<
+    T extends {
+      amount: number;
+      convertedAmount?: number;
+    },
+  >(items: T[]) {
+    return this.round2(
+      items.reduce(
+        (sum, item) => sum + Number(item.convertedAmount ?? item.amount),
+        0,
+      ),
+    );
+  }
+
+  private buildTopEmotionCategories<
+    T extends {
+      emotion: Emotion | null;
+      categoryId: string | null;
+      category: { name: string } | null;
+      amount: number;
+      convertedAmount?: number;
+    },
+  >(items: T[]): EmotionSummaryCategory[] {
+    const categoriesMap = new Map<string, EmotionSummaryCategory>();
+
+    for (const item of items) {
+      if (!item.categoryId || !item.category?.name || !item.emotion) {
+        continue;
+      }
+
+      const existing = categoriesMap.get(item.categoryId);
+      const amount = Number(item.convertedAmount ?? item.amount);
+
+      if (existing) {
+        existing.count += 1;
+        existing.amount = this.round2(existing.amount + amount);
+        continue;
+      }
+
+      categoriesMap.set(item.categoryId, {
+        emotion: item.emotion,
+        categoryId: item.categoryId,
+        categoryName: item.category.name,
+        count: 1,
+        amount: this.round2(amount),
+      });
+    }
+
+    return [...categoriesMap.values()]
+      .sort((left, right) => {
+        if (right.amount !== left.amount) {
+          return right.amount - left.amount;
+        }
+
+        return right.count - left.count;
+      })
+      .slice(0, 5);
   }
 
   private buildHistoryBuckets(

@@ -27,6 +27,7 @@ export class UsersService {
         email: true,
         firstName: true,
         lastName: true,
+        defaultCurrency: true,
       },
     });
 

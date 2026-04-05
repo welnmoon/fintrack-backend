@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
@@ -55,13 +56,60 @@ export class CategoriesService {
     }
   }
 
+  private normalizeCategoryName(name: string) {
+    const normalized = name.trim();
+
+    if (!normalized) {
+      throw new BadRequestException('Category name is required');
+    }
+
+    return normalized;
+  }
+
+  private async ensureCategoryNameIsUnique(
+    userId: string,
+    type: CategoryType,
+    name: string,
+    excludeId?: string,
+  ) {
+    const existing = await this.prisma.category.findFirst({
+      where: {
+        userId,
+        type,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+        name: {
+          equals: name,
+          mode: Prisma.QueryMode.insensitive,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (existing) {
+      throw new BadRequestException(
+        'Category with the same name and type already exists',
+      );
+    }
+  }
+
+  private async getCategoryTransactionsCount(userId: string, id: string) {
+    return this.prisma.transaction.count({
+      where: {
+        userId,
+        categoryId: id,
+      },
+    });
+  }
+
   async create(userId: string, dto: CreateCategoryDto) {
+    const normalizedName = this.normalizeCategoryName(dto.name);
     this.validatePresets(dto.type, dto);
+    await this.ensureCategoryNameIsUnique(userId, dto.type, normalizedName);
 
     return this.prisma.category.create({
       data: {
         userId,
-        name: dto.name.trim(),
+        name: normalizedName,
         type: dto.type,
         iconKey: dto.iconKey ?? null,
         colorKey: dto.colorKey ?? null,
@@ -72,7 +120,7 @@ export class CategoriesService {
   async findAll(userId: string) {
     return this.prisma.category.findMany({
       where: { userId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ type: 'asc' }, { name: 'asc' }],
     });
   }
 
@@ -88,12 +136,27 @@ export class CategoriesService {
     const current = await this.findOne(userId, id);
 
     const nextType = dto.type ?? current.type;
+    const nextName =
+      dto.name === undefined
+        ? current.name
+        : this.normalizeCategoryName(dto.name);
+
     this.validatePresets(nextType, dto);
+
+    await this.ensureCategoryNameIsUnique(userId, nextType, nextName, id);
+
+    const transactionsCount = await this.getCategoryTransactionsCount(userId, id);
+
+    if (dto.type && dto.type !== current.type && transactionsCount > 0) {
+      throw new BadRequestException(
+        'Cannot change category type while it is used in transactions',
+      );
+    }
 
     return this.prisma.category.update({
       where: { id },
       data: {
-        name: dto.name?.trim(),
+        name: nextName,
         type: dto.type,
         iconKey: dto.iconKey === undefined ? undefined : (dto.iconKey ?? null),
         colorKey:
@@ -104,6 +167,14 @@ export class CategoriesService {
 
   async remove(userId: string, id: string) {
     await this.findOne(userId, id);
+    const transactionsCount = await this.getCategoryTransactionsCount(userId, id);
+
+    if (transactionsCount > 0) {
+      throw new BadRequestException(
+        'Cannot delete category that is used in transactions',
+      );
+    }
+
     return this.prisma.category.delete({ where: { id } });
   }
 

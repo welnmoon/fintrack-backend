@@ -1,5 +1,6 @@
 import { AccountType, Currency } from '@prisma/client';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsIn, IsOptional, IsString } from 'class-validator';
+import { ACCOUNT_BACKGROUND_KEYS } from '../../../../common/constants/account-backgrounds';
 
 export class CreateAccountDto {
   @IsString()
@@ -11,4 +12,9 @@ export class CreateAccountDto {
 
   @IsEnum(Currency)
   currency: Currency;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(ACCOUNT_BACKGROUND_KEYS)
+  backgroundKey?: string;
 }

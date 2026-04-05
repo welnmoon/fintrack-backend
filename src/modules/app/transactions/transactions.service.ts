@@ -5,6 +5,7 @@ import { CategoriesService } from '../categories/categories.service';
 import { getPeriodRange } from '../../../common/helpers/get-current-month-range';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MoneyConversionService } from '../../fx/money-conversion.service';
+import { UpdateTransactionDto } from './dto/update-transaction.dto';
 
 @Injectable()
 export class TransactionsService {
@@ -17,18 +18,24 @@ export class TransactionsService {
   async create(dto: CreateTransactionDto, userId: string) {
     const account = await this.prisma.account.findFirst({
       where: { id: dto.accountId, userId },
-      select: { id: true, initialBalance: true },
+      select: { id: true },
     });
-    console.log('Create Transaction: ', dto.amount);
+
     if (!account) throw new ForbiddenException('Account not found');
-    console.log('After checkings: ', dto.amount);
+
+    const categoryId = await this.resolveCategoryId(
+      userId,
+      dto.type,
+      dto.categoryId,
+    );
 
     const tr = await this.prisma.transaction.create({
       data: {
         userId,
         accountId: dto.accountId,
-        categoryId: dto.type === 'ADJUSTMENT' ? null : dto.categoryId,
+        categoryId,
         type: dto.type,
+        emotion: dto.emotion ?? null,
         amount: dto.amount,
         occurredAt: new Date(dto.occurredAt),
         note: dto.note ?? null,
@@ -39,6 +46,7 @@ export class TransactionsService {
         accountId: true,
         categoryId: true,
         type: true,
+        emotion: true,
         amount: true,
         occurredAt: true,
         note: true,
@@ -47,9 +55,69 @@ export class TransactionsService {
       },
     });
 
-    console.log('TR: ', tr.amount);
-
     return tr;
+  }
+
+  async update(id: string, dto: UpdateTransactionDto, userId: string) {
+    const current = await this.prisma.transaction.findFirst({
+      where: { id, userId },
+      select: {
+        id: true,
+        accountId: true,
+        categoryId: true,
+        type: true,
+      },
+    });
+
+    if (!current) {
+      throw new ForbiddenException('Transaction not found');
+    }
+
+    const nextAccountId = dto.accountId ?? current.accountId;
+    const nextType = dto.type ?? current.type;
+    const nextCategoryId = await this.resolveCategoryId(
+      userId,
+      nextType,
+      dto.categoryId === undefined ? current.categoryId : dto.categoryId,
+    );
+
+    if (dto.accountId) {
+      const account = await this.prisma.account.findFirst({
+        where: { id: dto.accountId, userId },
+        select: { id: true },
+      });
+
+      if (!account) {
+        throw new ForbiddenException('Account not found');
+      }
+    }
+
+    return this.prisma.transaction.update({
+      where: { id: current.id },
+      data: {
+        accountId: nextAccountId,
+        categoryId: nextCategoryId,
+        type: nextType,
+        emotion: dto.emotion === undefined ? undefined : (dto.emotion ?? null),
+        amount: dto.amount,
+        occurredAt: dto.occurredAt ? new Date(dto.occurredAt) : undefined,
+        note:
+          dto.note === undefined ? undefined : (dto.note?.trim() || null),
+      },
+      select: {
+        id: true,
+        userId: true,
+        accountId: true,
+        categoryId: true,
+        type: true,
+        emotion: true,
+        amount: true,
+        occurredAt: true,
+        note: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
   }
 
   async getUserTransactions(
@@ -86,6 +154,7 @@ export class TransactionsService {
         accountId: true,
         categoryId: true,
         type: true,
+        emotion: true,
         amount: true,
         occurredAt: true,
         note: true,
@@ -201,6 +270,7 @@ export class TransactionsService {
           },
         },
         type: true,
+        emotion: true,
 
         originalAmount: true,
         amount: true,
@@ -212,5 +282,34 @@ export class TransactionsService {
     });
 
     return tr;
+  }
+
+  private async resolveCategoryId(
+    userId: string,
+    type: TransactionType,
+    categoryId?: string | null,
+  ) {
+    if (type === 'ADJUSTMENT') {
+      return null;
+    }
+
+    if (!categoryId) {
+      return null;
+    }
+
+    const category = await this.prisma.category.findFirst({
+      where: {
+        id: categoryId,
+        userId,
+        type,
+      },
+      select: { id: true },
+    });
+
+    if (!category) {
+      throw new ForbiddenException('Category not found');
+    }
+
+    return category.id;
   }
 }

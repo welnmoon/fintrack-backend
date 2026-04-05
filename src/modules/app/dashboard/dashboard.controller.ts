@@ -42,4 +42,14 @@ export class DashboardController {
       to,
     );
   }
+
+  @Get('forecast')
+  getForecast(@CurrentUser() user: AuthUser) {
+    return this.dashboardService.getForecast(user.id);
+  }
+
+  @Get('emotions-summary')
+  getEmotionsSummary(@CurrentUser() user: AuthUser) {
+    return this.dashboardService.getEmotionsSummary(user.id);
+  }
 }

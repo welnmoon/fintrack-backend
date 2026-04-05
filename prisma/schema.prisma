@@ -39,6 +39,14 @@ enum TransactionType {
   ADJUSTMENT
 }
 
+enum Emotion {
+  NEUTRAL
+  HAPPY
+  IMPULSIVE
+  STRESS
+  REGRET
+}
+
 model User {
   id           String    @id @default(uuid())
   firstName    String?
@@ -67,6 +75,7 @@ model Account {
   name           String
   type           AccountType
   currency       Currency
+  backgroundKey  String      @default("aurora-teal")
   initialBalance Decimal     @default(0.0) @db.Decimal(18, 2)
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
@@ -103,6 +112,7 @@ model Transaction {
   accountId  String
   categoryId String?
   type       TransactionType
+  emotion    Emotion?
 
   amount     Decimal         @db.Decimal(18, 2)
   originalAmount   Decimal?  @db.Decimal(18, 2)
@@ -121,6 +131,7 @@ model Transaction {
   @@index([userId, occurredAt])
   @@index([accountId, occurredAt])
   @@index([categoryId, occurredAt])
+  @@index([userId, emotion])
 }
 
 model Transfer {
