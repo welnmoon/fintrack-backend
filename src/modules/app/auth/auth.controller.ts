@@ -27,12 +27,11 @@ export class AuthController {
     accessToken: string,
     refreshToken: string,
   ) {
-    const isProd = process.env.NODE_ENV === 'production';
-    const sameSite: 'lax' | 'none' = isProd ? 'none' : 'lax';
+    const { sameSite, secure } = this.getCookieSettings();
 
     res.cookie('access_token', accessToken, {
       httpOnly: true,
-      secure: isProd,
+      secure,
       sameSite,
       path: '/',
       maxAge: 15 * 60 * 1000,
@@ -40,11 +39,26 @@ export class AuthController {
 
     res.cookie('refresh_token', refreshToken, {
       httpOnly: true,
-      secure: isProd,
+      secure,
       sameSite,
       path: '/auth/refresh',
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
+  }
+
+  private getCookieSettings(): { sameSite: 'lax' | 'none'; secure: boolean } {
+    const frontendUrl = process.env.FRONTEND_URL ?? '';
+    const normalizedFrontend = frontendUrl.replace(/\/+$/, '');
+    const isHttpsFrontend = normalizedFrontend.startsWith('https://');
+    const isLocalhost =
+      normalizedFrontend.includes('localhost') ||
+      normalizedFrontend.includes('127.0.0.1');
+    const isCrossSite = Boolean(normalizedFrontend && !isLocalhost);
+    const sameSite: 'lax' | 'none' =
+      isCrossSite && isHttpsFrontend ? 'none' : 'lax';
+    const secure = isCrossSite && isHttpsFrontend;
+
+    return { sameSite, secure };
   }
 
   @Post('login')
@@ -94,16 +108,18 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
     @CurrentUser() user: AuthUser,
   ) {
+    const { sameSite, secure } = this.getCookieSettings();
+
     res.clearCookie('access_token', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      secure,
+      sameSite,
     });
 
     res.clearCookie('refresh_token', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      secure,
+      sameSite,
       path: '/auth/refresh',
     });
 
