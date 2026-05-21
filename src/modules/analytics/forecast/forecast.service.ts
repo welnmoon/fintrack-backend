@@ -82,12 +82,35 @@ export class ForecastService {
 
     const forecastFutureExpense = blendedDailyExpense * daysRemaining; // Сколько, вероятно, ещё потратит до конца месяца.
 
-    const projectedEndBalance =
-      (accountsTotalBalance.total ?? 0) - forecastFutureExpense; // Сколько, вероятно, останется к концу месяца.
+    const currentBalance = accountsTotalBalance.total ?? 0;
+
+    const projectedEndBalance = currentBalance - forecastFutureExpense; // Сколько, вероятно, останется к концу месяца.
+
+    const daysToZero =
+      blendedDailyExpense > 0
+        ? Math.floor(currentBalance / blendedDailyExpense)
+        : null;
+
+    const scenarios = {
+      byMonthAverage: {
+        expectedExpense: this.round2(monthAvg * daysRemaining),
+        projectedEndBalance: this.round2(currentBalance - monthAvg * daysRemaining),
+      },
+      blended: {
+        expectedExpense: this.round2(forecastFutureExpense),
+        projectedEndBalance: this.round2(projectedEndBalance),
+      },
+      byRecentAverage: {
+        expectedExpense: this.round2(recent7Avg * daysRemaining),
+        projectedEndBalance: this.round2(
+          currentBalance - recent7Avg * daysRemaining,
+        ),
+      },
+    };
 
     return {
       currency: defaultCurrency,
-      currentBalance: accountsTotalBalance.total ?? 0,
+      currentBalance,
       spentSoFar,
       recent7Spent,
       monthAvg,
@@ -99,7 +122,15 @@ export class ForecastService {
       daysRemaining,
       basedOnTransactionsCount: transactionInThisMonth.items.length,
       confidence: this.getConfidence(transactionInThisMonth.items.length),
+      calculationNote:
+        'Прогноз учитывает только ожидаемые расходы и не учитывает будущие доходы.',
+      daysToZero,
+      scenarios,
     };
+  }
+
+  private round2(value: number) {
+    return Number(value.toFixed(2));
   }
 
   private getInclusiveDaysCount(periodStart: Date, periodEnd: Date) {

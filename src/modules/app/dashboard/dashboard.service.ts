@@ -6,6 +6,7 @@ import { TransactionsService } from '../transactions/transactions.service';
 import { CategoriesService } from '../categories/categories.service';
 import { FxService } from '../../fx/fx.service';
 import { ForecastService } from '../../analytics/forecast/forecast.service';
+import { getPeriodRange } from '../../../common/helpers/get-current-month-range';
 
 export type BalanceHistoryInterval = 'day' | 'week' | 'month';
 
@@ -14,10 +15,7 @@ type HistoryBucket = {
   periodEnd: Date;
 };
 
-type AccountEventKind =
-  | TransactionType
-  | 'TRANSFER_IN'
-  | 'TRANSFER_OUT';
+type AccountEventKind = TransactionType | 'TRANSFER_IN' | 'TRANSFER_OUT';
 
 type AccountEvent = {
   at: Date;
@@ -31,6 +29,12 @@ type EmotionSummaryCategory = {
   categoryName: string;
   count: number;
   amount: number;
+};
+
+type FinancialInsight = {
+  type: 'positive' | 'warning' | 'info';
+  title: string;
+  description: string;
 };
 
 @Injectable()
@@ -61,10 +65,17 @@ export class DashboardService {
       this.accountService.getUserAccountsTotalBalance(userId),
       this.transactionService.getCurrentMonthIncomeExpense(userId),
       this.transactionService.getLastTransactions(userId),
-      this.categoriesService.getExpensePie(userId, limit, periodStart, periodEnd),
+      this.categoriesService.getExpensePie(
+        userId,
+        limit,
+        periodStart,
+        periodEnd,
+      ),
       this.forecastService.getCurrentMonthForecast(userId),
       this.getEmotionsSummary(userId),
     ]);
+
+    const insights = this.generateInsights({ expensePie, forecast, emotionsSummary });
 
     return {
       accountsTotalBalance,
@@ -73,6 +84,7 @@ export class DashboardService {
       expensePie,
       forecast,
       emotionsSummary,
+      insights,
     };
   }
 
@@ -81,20 +93,22 @@ export class DashboardService {
   }
 
   async getEmotionsSummary(userId: string) {
-    const [allTransactions, expenseTransactions] = await Promise.all([
-      this.transactionService.getUserTransactions(userId),
-      this.transactionService.getUserTransactionsConverted(userId, ['EXPENSE']),
-    ]);
+    const { periodStart, periodEnd } = getPeriodRange('month');
+    const expenseTransactions =
+      await this.transactionService.getUserTransactionsConverted(
+        userId,
+        ['EXPENSE'],
+        periodStart,
+        periodEnd,
+      );
 
-    const emotionalTransactions = allTransactions.filter(
-      (transaction) => transaction.emotion !== null,
-    );
-    const expenseItemsWithEmotion = expenseTransactions.items.filter(
+    const expenseItems = expenseTransactions.items;
+    const expenseItemsWithEmotion = expenseItems.filter(
       (transaction) => transaction.emotion !== null,
     );
 
     const emotionDistributionMap = new Map<Emotion, number>();
-    for (const transaction of emotionalTransactions) {
+    for (const transaction of expenseItemsWithEmotion) {
       const emotion = transaction.emotion as Emotion;
       emotionDistributionMap.set(
         emotion,
@@ -102,32 +116,54 @@ export class DashboardService {
       );
     }
 
-    const totalExpenseTransactions = expenseTransactions.items.length;
+    const totalExpenseTransactions = expenseItems.length;
+    const markedExpensesCount = expenseItemsWithEmotion.length;
+    const totalExpenseAmount = this.sumConvertedAmounts(expenseItems);
     const impulsiveExpenses = expenseItemsWithEmotion.filter(
       (transaction) => transaction.emotion === 'IMPULSIVE',
     );
     const regretExpenses = expenseItemsWithEmotion.filter(
       (transaction) => transaction.emotion === 'REGRET',
     );
+    const stressExpenses = expenseItemsWithEmotion.filter(
+      (transaction) => transaction.emotion === 'STRESS',
+    );
+    const impulsiveAmount = this.sumConvertedAmounts(impulsiveExpenses);
+    const regretAmount = this.sumConvertedAmounts(regretExpenses);
+    const stressAmount = this.sumConvertedAmounts(stressExpenses);
 
     return {
       currency: expenseTransactions.currency,
       fxUnavailable: expenseTransactions.fxUnavailable,
       fxStale: expenseTransactions.fxStale,
-      totalTransactionsWithEmotion: emotionalTransactions.length,
-      impulsiveCount: emotionDistributionMap.get('IMPULSIVE') ?? 0,
-      regretCount: emotionDistributionMap.get('REGRET') ?? 0,
-      stressCount: emotionDistributionMap.get('STRESS') ?? 0,
-      impulsiveAmount: this.sumConvertedAmounts(impulsiveExpenses),
-      regretAmount: this.sumConvertedAmounts(regretExpenses),
+      periodLabel: 'Текущий месяц',
+      totalExpensesCount: totalExpenseTransactions,
+      markedExpensesCount,
+      markedExpensesPercent: this.calcShare(
+        markedExpensesCount,
+        totalExpenseTransactions,
+      ),
+      totalTransactionsWithEmotion: markedExpensesCount,
+      impulsiveCount: impulsiveExpenses.length,
+      regretCount: regretExpenses.length,
+      stressCount: stressExpenses.length,
+      impulsiveAmount,
+      regretAmount,
+      stressAmount,
       emotionDistribution: [...emotionDistributionMap.entries()]
         .map(([emotion, count]) => ({ emotion, count }))
         .sort((left, right) => right.count - left.count),
       impulsiveExpenseShare: this.calcShare(
+        impulsiveAmount,
+        totalExpenseAmount,
+      ),
+      regretExpenseShare: this.calcShare(regretAmount, totalExpenseAmount),
+      stressShareByAmount: this.calcShare(stressAmount, totalExpenseAmount),
+      impulsiveShareByCount: this.calcShare(
         impulsiveExpenses.length,
         totalExpenseTransactions,
       ),
-      regretExpenseShare: this.calcShare(
+      regretShareByCount: this.calcShare(
         regretExpenses.length,
         totalExpenseTransactions,
       ),
@@ -208,7 +244,7 @@ export class DashboardService {
       }),
     ]);
 
-    const targetCurrency = (user?.defaultCurrency ?? 'KZT') as Currency;
+    const targetCurrency = user?.defaultCurrency ?? 'KZT';
 
     const eventsByAccount = new Map<string, AccountEvent[]>();
     for (const account of accounts) {
@@ -623,5 +659,120 @@ export class DashboardService {
       periodStart: this.startOfUtcDay(resolvedTo),
       periodEnd: this.endOfUtcDay(resolvedFrom),
     };
+  }
+
+  private formatAmount(amount: number, currency: string): string {
+    return `${Math.round(amount).toLocaleString('ru-RU')} ${currency}`;
+  }
+
+  private generateInsights(params: {
+    expensePie: { items: Array<{ name: string; amount: number }>; currency: string };
+    forecast: {
+      forecastFutureExpense: number;
+      daysToZero: number | null;
+      currency: string | null;
+    };
+    emotionsSummary: {
+      topEmotionCategories: Array<{ categoryName: string }>;
+      markedExpensesPercent: number;
+      totalExpensesCount: number;
+    };
+  }): FinancialInsight[] {
+    const insights: FinancialInsight[] = [];
+    const { expensePie, forecast, emotionsSummary } = params;
+    const currency = forecast.currency ?? expensePie.currency;
+
+    // Rule 1: top expense category
+    const pieItems = expensePie.items;
+    if (pieItems.length > 0) {
+      const topItem = pieItems[0];
+      const totalFromPie = pieItems.reduce((s, i) => s + i.amount, 0);
+      if (totalFromPie > 0) {
+        const share = this.round2((topItem.amount / totalFromPie) * 100);
+        if (share >= 40) {
+          insights.push({
+            type: 'warning',
+            title: 'Высокая концентрация расходов',
+            description: `Категория «${topItem.name}» занимает ${share}% расходов за текущий период.`,
+          });
+        } else {
+          insights.push({
+            type: 'info',
+            title: 'Крупнейшая категория расходов',
+            description: `Больше всего средств за текущий период ушло на категорию «${topItem.name}» — ${share}% расходов.`,
+          });
+        }
+      }
+    }
+
+    // Rule 2: forecast future expense
+    if (forecast.forecastFutureExpense > 0) {
+      insights.push({
+        type: 'info',
+        title: 'Ожидаемые расходы до конца месяца',
+        description: `При текущем темпе до конца месяца может быть потрачено около ${this.formatAmount(forecast.forecastFutureExpense, currency)}.`,
+      });
+    }
+
+    // Rule 3: daysToZero
+    if (forecast.daysToZero !== null) {
+      if (forecast.daysToZero < 30) {
+        insights.push({
+          type: 'warning',
+          title: 'Низкий запас средств',
+          description: `При текущем темпе средств хватит примерно на ${forecast.daysToZero} дней.`,
+        });
+      } else {
+        insights.push({
+          type: 'positive',
+          title: 'Запас средств стабильный',
+          description: `При текущем темпе средств хватит примерно на ${forecast.daysToZero} дней.`,
+        });
+      }
+    }
+
+    // Rule 4: top impulsive category
+    const topImpulsive = emotionsSummary.topEmotionCategories[0];
+    if (topImpulsive) {
+      insights.push({
+        type: 'warning',
+        title: 'Импульсивные расходы',
+        description: `Наибольшая сумма импульсивных расходов приходится на категорию «${topImpulsive.categoryName}».`,
+      });
+    }
+
+    // Rule 5: low emotion coverage
+    if (
+      emotionsSummary.totalExpensesCount > 0 &&
+      emotionsSummary.markedExpensesPercent < 30
+    ) {
+      insights.push({
+        type: 'info',
+        title: 'Недостаточно эмоциональных меток',
+        description: `Эмоцией отмечено только ${emotionsSummary.markedExpensesPercent}% расходов. Добавляйте метки, чтобы анализ был точнее.`,
+      });
+    }
+
+    const priority: Record<FinancialInsight['type'], number> = {
+      warning: 0,
+      positive: 1,
+      info: 2,
+    };
+    insights.sort((a, b) => priority[a.type] - priority[b.type]);
+
+    const result = insights.slice(0, 4);
+
+    if (result.length === 0) {
+      return [
+        {
+          type: 'info',
+          title: 'Недостаточно данных',
+          description:
+            'Добавьте больше операций, чтобы система могла сформировать финансовые инсайты.',
+        },
+      ];
+    }
+
+    return result;
   }
 }
