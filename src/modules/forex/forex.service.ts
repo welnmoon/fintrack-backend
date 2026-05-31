@@ -449,18 +449,15 @@ export class ForexService implements OnModuleDestroy, OnModuleInit {
     symbol: string,
     interval: ForexInterval,
   ): Promise<ForexSyncStateRecord> {
-    return this.prisma.forexSyncState.upsert({
+    await this.ensureSyncStateExists(symbol, interval);
+
+    const state = await this.prisma.forexSyncState.findUnique({
       where: {
         symbol_interval: {
           symbol,
           interval,
         },
       },
-      create: {
-        symbol,
-        interval,
-      },
-      update: {},
       select: {
         backfillCompleted: true,
         oldestCandleTime: true,
@@ -471,27 +468,28 @@ export class ForexService implements OnModuleDestroy, OnModuleInit {
         lastErrorMessage: true,
       },
     });
+
+    if (!state) {
+      throw new Error(
+        `Failed to load forex sync state for ${symbol} ${interval}`,
+      );
+    }
+
+    return state;
   }
 
   private async markSyncSuccess(symbol: string, interval: ForexInterval) {
     const now = new Date();
+    await this.ensureSyncStateExists(symbol, interval);
 
-    await this.prisma.forexSyncState.upsert({
+    await this.prisma.forexSyncState.update({
       where: {
         symbol_interval: {
           symbol,
           interval,
         },
       },
-      create: {
-        symbol,
-        interval,
-        sourceUnavailable: false,
-        staleSince: null,
-        lastSuccessfulSyncAt: now,
-        lastErrorMessage: null,
-      },
-      update: {
+      data: {
         sourceUnavailable: false,
         staleSince: null,
         lastSuccessfulSyncAt: now,
@@ -507,23 +505,16 @@ export class ForexService implements OnModuleDestroy, OnModuleInit {
   ) {
     const now = new Date();
     const current = await this.getSyncState(symbol, interval);
+    await this.ensureSyncStateExists(symbol, interval);
 
-    await this.prisma.forexSyncState.upsert({
+    await this.prisma.forexSyncState.update({
       where: {
         symbol_interval: {
           symbol,
           interval,
         },
       },
-      create: {
-        symbol,
-        interval,
-        sourceUnavailable: true,
-        staleSince: now,
-        lastFailedSyncAt: now,
-        lastErrorMessage: errorMessage,
-      },
-      update: {
+      data: {
         sourceUnavailable: true,
         staleSince: current.staleSince ?? now,
         lastFailedSyncAt: now,
@@ -543,22 +534,16 @@ export class ForexService implements OnModuleDestroy, OnModuleInit {
       currentOldest && currentOldest.getTime() < oldestCandleTime.getTime()
         ? currentOldest
         : oldestCandleTime;
+    await this.ensureSyncStateExists(symbol, interval);
 
-    await this.prisma.forexSyncState.upsert({
+    await this.prisma.forexSyncState.update({
       where: {
         symbol_interval: {
           symbol,
           interval,
         },
       },
-      create: {
-        symbol,
-        interval,
-        backfillCompleted: false,
-        oldestCandleTime: nextOldest,
-        lastBackfillAt: new Date(),
-      },
-      update: {
+      data: {
         backfillCompleted: false,
         oldestCandleTime: nextOldest,
         lastBackfillAt: new Date(),
@@ -571,25 +556,30 @@ export class ForexService implements OnModuleDestroy, OnModuleInit {
     interval: ForexInterval,
     oldestCandleTime: Date | null,
   ) {
-    await this.prisma.forexSyncState.upsert({
+    await this.ensureSyncStateExists(symbol, interval);
+
+    await this.prisma.forexSyncState.update({
       where: {
         symbol_interval: {
           symbol,
           interval,
         },
       },
-      create: {
-        symbol,
-        interval,
+      data: {
         backfillCompleted: true,
         oldestCandleTime,
         lastBackfillAt: new Date(),
       },
-      update: {
-        backfillCompleted: true,
-        oldestCandleTime,
-        lastBackfillAt: new Date(),
-      },
+    });
+  }
+
+  private async ensureSyncStateExists(
+    symbol: string,
+    interval: ForexInterval,
+  ) {
+    await this.prisma.forexSyncState.createMany({
+      data: [{ symbol, interval }],
+      skipDuplicates: true,
     });
   }
 
