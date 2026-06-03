@@ -24,26 +24,32 @@ export class AccountsService {
   }
 
   async getUserAccounts(userId: string) {
-    const accounts = await this.prisma.account.findMany({
-      where: { userId },
-      include: {
-        transactions: {
-          select: {
-            type: true,
-            amount: true,
-            occurredAt: true,
+    const [user, accounts] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { defaultCurrency: true },
+      }),
+      this.prisma.account.findMany({
+        where: { userId },
+        include: {
+          transactions: {
+            select: {
+              type: true,
+              amount: true,
+              occurredAt: true,
+            },
+          },
+          transfersOut: {
+            where: { isCanceled: false },
+            select: { fromAmount: true, occurredAt: true },
+          },
+          transfersIn: {
+            where: { isCanceled: false },
+            select: { toAmount: true, occurredAt: true },
           },
         },
-        transfersOut: {
-          where: { isCanceled: false },
-          select: { fromAmount: true, occurredAt: true },
-        },
-        transfersIn: {
-          where: { isCanceled: false },
-          select: { toAmount: true, occurredAt: true },
-        },
-      },
-    });
+      }),
+    ]);
 
     const accountsWithBalance = accounts.map((account) => {
       const balance = calcAccountBalance({
@@ -65,7 +71,21 @@ export class AccountsService {
       };
     });
 
-    return accountsWithBalance;
+    const targetCurrency = user?.defaultCurrency ?? 'KZT';
+    const converted = await this.moneyConversionService.convertItems(
+      accountsWithBalance.map((account) => ({
+        amount: account.balance,
+        currency: account.currency,
+      })),
+      targetCurrency,
+    );
+
+    return accountsWithBalance.map((account, index) => ({
+      ...account,
+      convertedBalance:
+        converted.items[index]?.convertedAmount ?? account.balance,
+      convertedCurrency: targetCurrency,
+    }));
   }
 
   async getUserAccountsTotalBalance(userId: string) {
@@ -92,7 +112,7 @@ export class AccountsService {
       }),
     ]);
 
-    const target = (user?.defaultCurrency ?? 'KZT') as Currency;
+    const target = user?.defaultCurrency ?? 'KZT';
 
     const balances = accounts.map((a) => ({
       currency: a.currency,
@@ -115,7 +135,7 @@ export class AccountsService {
     const summary = await this.moneyConversionService.sumItems(
       balances.map((item) => ({
         amount: item.balance,
-        currency: item.currency as Currency,
+        currency: item.currency,
       })),
       target,
     );

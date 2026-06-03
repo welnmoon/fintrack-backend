@@ -1,5 +1,5 @@
 import { Currency } from '@prisma/client';
-import { IsEmail, IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEmail, IsEnum, IsOptional, IsString, ValidateIf } from 'class-validator';
 
 export class UpdateUserDto {
   @IsOptional()
@@ -17,4 +17,9 @@ export class UpdateUserDto {
   @IsOptional()
   @IsEnum(Currency)
   defaultCurrency?: Currency;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  defaultAccountId?: string | null;
 }

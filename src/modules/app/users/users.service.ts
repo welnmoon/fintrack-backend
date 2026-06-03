@@ -28,6 +28,7 @@ export class UsersService {
         firstName: true,
         lastName: true,
         defaultCurrency: true,
+        defaultAccountId: true,
       },
     });
 
@@ -62,6 +63,20 @@ export class UsersService {
   }
 
   async update(id: string, dto: UpdateUserDto) {
+    if (dto.defaultAccountId !== undefined && dto.defaultAccountId !== null) {
+      const account = await this.prisma.account.findFirst({
+        where: {
+          id: dto.defaultAccountId,
+          userId: id,
+        },
+        select: { id: true },
+      });
+
+      if (!account) {
+        throw new BadRequestException('Default account not found');
+      }
+    }
+
     return this.prisma.user.update({
       where: {
         id,
@@ -73,6 +88,9 @@ export class UsersService {
         ...(dto.defaultCurrency !== undefined
           ? { defaultCurrency: dto.defaultCurrency }
           : {}),
+        ...(dto.defaultAccountId !== undefined
+          ? { defaultAccountId: dto.defaultAccountId }
+          : {}),
       },
       select: {
         id: true,
@@ -80,6 +98,7 @@ export class UsersService {
         firstName: true,
         lastName: true,
         defaultCurrency: true,
+        defaultAccountId: true,
         createdAt: true,
         updatedAt: true,
       },
