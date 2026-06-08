@@ -440,4 +440,46 @@ export class AccountsService {
       archivedAt,
     };
   }
+
+  async unarchiveAccount(userId: string, accountId: string) {
+    const account = await this.prisma.account.findFirst({
+      where: { id: accountId, userId },
+      select: {
+        id: true,
+        name: true,
+        isArchived: true,
+      },
+    });
+
+    if (!account) {
+      throw new BadRequestException('Account not found');
+    }
+
+    if (!account.isArchived) {
+      throw new BadRequestException('Account is already active');
+    }
+
+    const activeAccountsCount = await this.prisma.account.count({
+      where: { userId, isArchived: false },
+    });
+
+    if (activeAccountsCount >= MAX_ACCOUNTS_PER_USER) {
+      throw new BadRequestException(
+        `User cannot have more than ${MAX_ACCOUNTS_PER_USER} active accounts`,
+      );
+    }
+
+    await this.prisma.account.update({
+      where: { id: accountId },
+      data: {
+        isArchived: false,
+        archivedAt: null,
+      },
+    });
+
+    return {
+      id: account.id,
+      unarchived: true,
+    };
+  }
 }
