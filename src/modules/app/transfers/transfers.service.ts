@@ -28,11 +28,11 @@ export class TransfersService {
   ): Promise<TransferResponse> {
     const [fromAcc, toAcc] = await Promise.all([
       this.prisma.account.findFirst({
-        where: { id: dto.fromAccountId, userId },
+        where: { id: dto.fromAccountId, userId, isArchived: false },
         select: { id: true, currency: true },
       }),
       this.prisma.account.findFirst({
-        where: { id: dto.toAccountId, userId },
+        where: { id: dto.toAccountId, userId, isArchived: false },
         select: { id: true, currency: true },
       }),
     ]);

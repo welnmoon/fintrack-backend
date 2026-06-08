@@ -80,6 +80,8 @@ model Account {
   currency       Currency
   backgroundKey  String      @default("aurora-teal")
   initialBalance Decimal     @default(0.0) @db.Decimal(18, 2)
+  isArchived     Boolean     @default(false)
+  archivedAt     DateTime?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
@@ -90,6 +92,7 @@ model Account {
   defaultForUser User[] @relation("UserDefaultAccount")
 
   @@index([userId])
+  @@index([userId, isArchived])
   @@unique([userId, name])
 }
 

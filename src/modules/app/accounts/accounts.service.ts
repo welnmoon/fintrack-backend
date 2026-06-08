@@ -30,7 +30,7 @@ export class AccountsService {
         select: { defaultCurrency: true },
       }),
       this.prisma.account.findMany({
-        where: { userId },
+        where: { userId, isArchived: false },
         include: {
           transactions: {
             select: {
@@ -85,6 +85,34 @@ export class AccountsService {
       convertedBalance:
         converted.items[index]?.convertedAmount ?? account.balance,
       convertedCurrency: targetCurrency,
+      isArchived: false,
+      archivedAt: null,
+    }));
+  }
+
+  async getArchivedAccounts(userId: string) {
+    const accounts = await this.prisma.account.findMany({
+      where: { userId, isArchived: true },
+      orderBy: [{ archivedAt: 'desc' }, { updatedAt: 'desc' }],
+      select: {
+        id: true,
+        name: true,
+        currency: true,
+        type: true,
+        backgroundKey: true,
+        accountNumber: true,
+        initialBalance: true,
+        isArchived: true,
+        archivedAt: true,
+      },
+    });
+
+    return accounts.map((account) => ({
+      ...account,
+      initialBalance: Number(account.initialBalance),
+      balance: 0,
+      convertedBalance: 0,
+      convertedCurrency: account.currency,
     }));
   }
 
@@ -95,7 +123,7 @@ export class AccountsService {
         select: { defaultCurrency: true },
       }),
       this.prisma.account.findMany({
-        where: { userId },
+        where: { userId, isArchived: false },
         include: {
           transactions: {
             select: { type: true, amount: true, occurredAt: true },
@@ -154,6 +182,7 @@ export class AccountsService {
       where: {
         id: accountId,
         userId,
+        isArchived: false,
       },
     });
   }
@@ -161,7 +190,7 @@ export class AccountsService {
   async createAccount(userId: string, dto: CreateAccountDto) {
     try {
       const existingAccountsCount = await this.prisma.account.count({
-        where: { userId },
+        where: { userId, isArchived: false },
       });
 
       if (existingAccountsCount >= MAX_ACCOUNTS_PER_USER) {
@@ -223,7 +252,7 @@ export class AccountsService {
 
   async getAccountOptions(userId: string) {
     return this.prisma.account.findMany({
-      where: { userId },
+      where: { userId, isArchived: false },
       select: {
         id: true,
         name: true,
@@ -241,7 +270,7 @@ export class AccountsService {
     dto: UpdateAccountBackgroundDto,
   ) {
     const account = await this.prisma.account.findFirst({
-      where: { id: accountId, userId },
+      where: { id: accountId, userId, isArchived: false },
       select: { id: true },
     });
 
@@ -267,7 +296,7 @@ export class AccountsService {
     dto: SetAccountBalanceDto,
   ) {
     const account = await this.prisma.account.findFirst({
-      where: { id: accountId, userId },
+      where: { id: accountId, userId, isArchived: false },
       select: { id: true },
     });
 
@@ -368,6 +397,47 @@ export class AccountsService {
     return {
       id: account.id,
       deleted: true,
+    };
+  }
+
+  async archiveAccount(userId: string, accountId: string) {
+    const account = await this.prisma.account.findFirst({
+      where: { id: accountId, userId },
+      select: {
+        id: true,
+        name: true,
+        isArchived: true,
+      },
+    });
+
+    if (!account) {
+      throw new BadRequestException('Account not found');
+    }
+
+    if (account.isArchived) {
+      throw new BadRequestException('Account already archived');
+    }
+
+    const archivedAt = new Date();
+
+    await this.prisma.$transaction([
+      this.prisma.account.update({
+        where: { id: accountId },
+        data: {
+          isArchived: true,
+          archivedAt,
+        },
+      }),
+      this.prisma.user.updateMany({
+        where: { id: userId, defaultAccountId: accountId },
+        data: { defaultAccountId: null },
+      }),
+    ]);
+
+    return {
+      id: account.id,
+      archived: true,
+      archivedAt,
     };
   }
 }

@@ -17,7 +17,7 @@ export class TransactionsService {
 
   async create(dto: CreateTransactionDto, userId: string) {
     const account = await this.prisma.account.findFirst({
-      where: { id: dto.accountId, userId },
+      where: { id: dto.accountId, userId, isArchived: false },
       select: { id: true },
     });
 
@@ -83,7 +83,7 @@ export class TransactionsService {
 
     if (dto.accountId) {
       const account = await this.prisma.account.findFirst({
-        where: { id: dto.accountId, userId },
+        where: { id: dto.accountId, userId, isArchived: false },
         select: { id: true },
       });
 

@@ -187,6 +187,11 @@ export class ForexService implements OnModuleDestroy, OnModuleInit {
     });
   }
 
+  // -------------------------------------- //
+  // -------------------------------------- //
+  // -------------------------------------- //
+  // -------------------------------------- //
+
   private toSseMessage(type: string, data: string | object): MessageEvent {
     return { type, data };
   }
@@ -573,10 +578,7 @@ export class ForexService implements OnModuleDestroy, OnModuleInit {
     });
   }
 
-  private async ensureSyncStateExists(
-    symbol: string,
-    interval: ForexInterval,
-  ) {
+  private async ensureSyncStateExists(symbol: string, interval: ForexInterval) {
     await this.prisma.forexSyncState.createMany({
       data: [{ symbol, interval }],
       skipDuplicates: true,

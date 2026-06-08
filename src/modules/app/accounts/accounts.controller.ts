@@ -26,6 +26,11 @@ export class AccountsController {
     return this.accountsService.getUserAccounts(user.id);
   }
 
+  @Get('archived')
+  getArchivedAccounts(@CurrentUser() user: AuthUser) {
+    return this.accountsService.getArchivedAccounts(user.id);
+  }
+
   @Post()
   createAccount(@CurrentUser() user: AuthUser, @Body() dto: CreateAccountDto) {
     return this.accountsService.createAccount(user.id, dto);
@@ -52,6 +57,11 @@ export class AccountsController {
     @Body() dto: SetAccountBalanceDto,
   ) {
     return this.accountsService.setAccountBalance(user.id, id, dto);
+  }
+
+  @Patch(':id/archive')
+  archiveAccount(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.accountsService.archiveAccount(user.id, id);
   }
 
   @Get(':id')

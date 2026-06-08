@@ -18,7 +18,9 @@ export class FxCacheService implements OnModuleDestroy {
   constructor() {
     const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379';
     if (!process.env.REDIS_URL) {
-      this.logger.log(`REDIS_URL is not set. Trying default Redis: ${redisUrl}`);
+      this.logger.log(
+        `REDIS_URL is not set. Trying default Redis: ${redisUrl}`,
+      );
     }
 
     const client = createClient({
