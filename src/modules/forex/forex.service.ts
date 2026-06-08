@@ -51,6 +51,15 @@ type ForexSyncStateRecord = {
   lastErrorMessage: string | null;
 };
 
+type ForexAvailablePair = {
+  symbol: string;
+  interval: string;
+  lastPrice: number;
+  previousPrice: number | null;
+  changePercent: number | null;
+  updatedAt: string;
+};
+
 @Injectable()
 export class ForexService implements OnModuleDestroy, OnModuleInit {
   private readonly logger = new Logger(ForexService.name);
@@ -146,6 +155,63 @@ export class ForexService implements OnModuleDestroy, OnModuleInit {
     this.scheduleBackfill(normalizedSymbol, normalizedInterval);
 
     return snapshot;
+  }
+
+  async getAvailablePairs(): Promise<ForexAvailablePair[]> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        symbol: string;
+        interval: string;
+        time: Date;
+        close: unknown;
+        previous_close: unknown | null;
+      }>
+    >`
+      WITH ranked AS (
+        SELECT
+          "symbol",
+          "interval",
+          "time",
+          "close",
+          LAG("close") OVER (
+            PARTITION BY "symbol", "interval"
+            ORDER BY "time"
+          ) AS previous_close,
+          ROW_NUMBER() OVER (
+            PARTITION BY "symbol"
+            ORDER BY "time" DESC, "updatedAt" DESC
+          ) AS row_num
+        FROM "ForexCandle"
+      )
+      SELECT
+        "symbol",
+        "interval",
+        "time",
+        "close",
+        previous_close
+      FROM ranked
+      WHERE row_num = 1
+      ORDER BY "symbol" ASC
+    `;
+
+    return rows.map((row) => {
+      const lastPrice = Number(row.close);
+      const previousPrice =
+        row.previous_close === null ? null : Number(row.previous_close);
+      const changePercent =
+        previousPrice && Number.isFinite(previousPrice) && previousPrice !== 0
+          ? ((lastPrice - previousPrice) / previousPrice) * 100
+          : null;
+
+      return {
+        symbol: row.symbol,
+        interval: row.interval,
+        lastPrice,
+        previousPrice,
+        changePercent,
+        updatedAt: row.time.toISOString(),
+      };
+    });
   }
 
   stream(symbol?: string, interval?: ForexInterval): Observable<MessageEvent> {
