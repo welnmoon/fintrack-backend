@@ -8,6 +8,12 @@ import { ForexStreamQueryDto } from './dto/forex-stream-query.dto';
 export class ForexController {
   constructor(private readonly forexService: ForexService) {}
 
+  @Get('pairs')
+  @Public()
+  getPairs() {
+    return this.forexService.getAvailablePairs();
+  }
+
   @Get('snapshot')
   @Public()
   getSnapshot(@Query() query: ForexStreamQueryDto) {
