@@ -64,6 +64,11 @@ export class AccountsController {
     return this.accountsService.archiveAccount(user.id, id);
   }
 
+  @Patch(':id/unarchive')
+  unarchiveAccount(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.accountsService.unarchiveAccount(user.id, id);
+  }
+
   @Get(':id')
   getAccountById(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.accountsService.getAccountById(user.id, id);

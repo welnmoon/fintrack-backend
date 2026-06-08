@@ -43,11 +43,54 @@ const TARGET_USER_ID =
   process.env.SEED_USER_ID ?? '8be4b8da-98cd-4d33-a313-b0c61d251633';
 const TARGET_USER_EMAIL = process.env.SEED_USER_EMAIL ?? 'ne@gmail.com';
 
+function createRng(seed) {
+  let value = seed >>> 0;
+
+  return () => {
+    value += 0x6d2b79f5;
+    let t = value;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const rng = createRng(20260608);
+
+function pick(values) {
+  return values[Math.floor(rng() * values.length)];
+}
+
+function chance(probability) {
+  return rng() < probability;
+}
+
+function randomInt(min, max) {
+  return Math.floor(rng() * (max - min + 1)) + min;
+}
+
+function money(value, digits = 0) {
+  return Number(value.toFixed(digits));
+}
+
+function randomAmount(min, max, step = 100) {
+  const steps = Math.round((max - min) / step);
+  return min + randomInt(0, steps) * step;
+}
+
 function atDaysAgo(daysAgo, hour, minute = 0) {
   const date = new Date();
   date.setHours(hour, minute, 0, 0);
   date.setDate(date.getDate() - daysAgo);
   return date;
+}
+
+function atOffset(anchorDaysAgo, offsetDays, hour, minute = 0) {
+  return atDaysAgo(Math.max(anchorDaysAgo - offsetDays, 0), hour, minute);
+}
+
+function convertAmount(fromAmount, rate) {
+  return money(fromAmount * rate, 2);
 }
 
 async function resolveTargetUser() {
@@ -119,32 +162,32 @@ async function main() {
       type: 'BANK',
       currency: 'KZT',
       backgroundKey: 'aurora-teal',
-      initialBalance: 180000,
-      createdAt: atDaysAgo(185, 10),
+      initialBalance: 245000,
+      createdAt: atDaysAgo(215, 10),
     },
     {
-      name: 'Freedom Reserve',
+      name: 'Freedom USD Reserve',
       type: 'BANK',
-      currency: 'KZT',
+      currency: 'USD',
       backgroundKey: 'midnight-indigo',
-      initialBalance: 320000,
-      createdAt: atDaysAgo(183, 11),
+      initialBalance: 1400,
+      createdAt: atDaysAgo(214, 11),
     },
     {
       name: 'Cash Everyday',
       type: 'CASH',
       currency: 'KZT',
       backgroundKey: 'sunset-coral',
-      initialBalance: 25000,
-      createdAt: atDaysAgo(182, 12),
+      initialBalance: 38000,
+      createdAt: atDaysAgo(213, 12),
     },
     {
-      name: 'Travel Envelope',
+      name: 'Travel EUR',
       type: 'BANK',
-      currency: 'KZT',
+      currency: 'EUR',
       backgroundKey: 'forest-mint',
-      initialBalance: 70000,
-      createdAt: atDaysAgo(180, 13),
+      initialBalance: 180,
+      createdAt: atDaysAgo(212, 13),
     },
   ];
 
@@ -160,6 +203,11 @@ async function main() {
   const accountMap = Object.fromEntries(
     accounts.map((account) => [account.name, account]),
   );
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { defaultAccountId: accountMap['Kaspi Gold'].id },
+  });
 
   // ── Categories ───────────────────────────────────────────────────────────────
 
@@ -205,337 +253,517 @@ async function main() {
   );
 
   // ── Transactions ─────────────────────────────────────────────────────────────
-  //
-  // 6 months of data. Each month has:
-  //   • Salary on ~day 5 of the month
-  //   • 1-2 freelance / side-income entries
-  //   • Monthly rent (~155 000 ₸), bills (~26 000), subscriptions (~6 000)
-  //   • 4 grocery runs, 8-10 coffee/transport entries, 2-3 cafes
-  //   • 1-3 shopping, 1-2 entertainment, occasional health/travel/home
-  //
-  // Emotion distribution intended:
-  //   NEUTRAL ≈ 45 %  (routine)
-  //   HAPPY   ≈ 25 %  (salary, cafes, entertainment)
-  //   STRESS  ≈ 15 %  (rent, bills, health, rushed transport)
-  //   IMPULSIVE ≈ 9 % (late-night shopping)
-  //   REGRET  ≈ 6 %   (next-day regret purchases)
+  // Реалистичнее моделируем 7 месяцев:
+  //   • зарплата и нерегулярный фриланс
+  //   • отдельный долларовый резерв и EUR-счет для поездок
+  //   • коммуналка/аренда/подписки каждый месяц
+  //   • повседневные кофе/такси/продукты с разбросом сумм
+  //   • иногда корректировки наличных и возвраты
 
-  const transactions = [
+  const transactions = [];
 
-    // ═══════════════════════════════════════════════════════════════════
-    // MONTH 6  (days 151-180 ago)
-    // ═══════════════════════════════════════════════════════════════════
-
-    // Income
-    { type: 'INCOME',  account: 'Kaspi Gold',      category: 'Зарплата',       amount: 422000, occurredAt: atDaysAgo(177, 9, 10),  emotion: 'HAPPY',     note: 'Зарплата за месяц' },
-    { type: 'INCOME',  account: 'Kaspi Gold',       category: 'Фриланс',        amount: 68000,  occurredAt: atDaysAgo(163, 20, 30), emotion: 'HAPPY',     note: 'Проект для клиента из РФ' },
-    { type: 'INCOME',  account: 'Freedom Reserve',  category: 'Инвест. доход',  amount: 32000,  occurredAt: atDaysAgo(155, 12, 0),  emotion: 'NEUTRAL',   note: 'Дивиденды по портфелю' },
-
-    // Rent & bills
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Аренда',         amount: 155000, occurredAt: atDaysAgo(179, 10, 0),  emotion: 'STRESS',    note: 'Аренда квартиры' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Счета',          amount: 27200,  occurredAt: atDaysAgo(178, 10, 30), emotion: 'STRESS',    note: 'Коммунальные услуги' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Счета',          amount: 14800,  occurredAt: atDaysAgo(155, 11, 0),  emotion: 'NEUTRAL',   note: 'Интернет и мобильная связь' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Подписки',       amount: 5980,   occurredAt: atDaysAgo(177, 9, 5),   emotion: 'NEUTRAL',   note: 'Netflix, Spotify, iCloud' },
-
-    // Groceries (weekly)
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 16400,  occurredAt: atDaysAgo(176, 18, 30), emotion: 'NEUTRAL',   note: 'Еженедельная закупка' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 15600,  occurredAt: atDaysAgo(169, 18, 20), emotion: 'NEUTRAL',   note: 'Продукты и бытовая химия' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 17200,  occurredAt: atDaysAgo(162, 18, 30), emotion: 'NEUTRAL',   note: 'Закупка на неделю' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 15400,  occurredAt: atDaysAgo(154, 18, 0),  emotion: 'NEUTRAL',   note: 'Продукты и фрукты' },
-
-    // Coffee & transport (daily-ish)
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 1800,   occurredAt: atDaysAgo(175, 8, 40),  emotion: 'HAPPY',     note: 'Кофе и круассан' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2900,   occurredAt: atDaysAgo(174, 8, 30),  emotion: 'NEUTRAL',   note: 'Такси на работу' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2000,   occurredAt: atDaysAgo(172, 15, 30), emotion: 'NEUTRAL',   note: 'Кофе после обеда' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 3200,   occurredAt: atDaysAgo(171, 8, 40),  emotion: 'STRESS',    note: 'Такси — опаздывал' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 1900,   occurredAt: atDaysAgo(168, 16, 0),  emotion: 'HAPPY',     note: 'Кофе с коллегой' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2700,   occurredAt: atDaysAgo(167, 8, 20),  emotion: 'NEUTRAL',   note: 'Поездка в центр' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2100,   occurredAt: atDaysAgo(165, 15, 0),  emotion: 'NEUTRAL',   note: 'Обеденный перекус' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 3100,   occurredAt: atDaysAgo(161, 8, 30),  emotion: 'NEUTRAL',   note: 'Такси вечером' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 1700,   occurredAt: atDaysAgo(158, 16, 20), emotion: 'HAPPY',     note: 'Кофе утром' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2500,   occurredAt: atDaysAgo(153, 8, 30),  emotion: 'NEUTRAL',   note: 'Утренняя поездка' },
-
-    // Cafes & restaurants
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Кафе и рестораны', amount: 9100, occurredAt: atDaysAgo(172, 20, 30), emotion: 'HAPPY',     note: 'Ужин с коллегами' },
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Кафе и рестораны', amount: 8800, occurredAt: atDaysAgo(154, 20, 30), emotion: 'HAPPY',     note: 'Встреча с друзьями в кафе' },
-
-    // Shopping
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Покупки',        amount: 36000,  occurredAt: atDaysAgo(165, 22, 15), emotion: 'IMPULSIVE', note: 'Спонтанный заказ одежды поздно ночью' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Покупки',        amount: 22000,  occurredAt: atDaysAgo(157, 23, 0),  emotion: 'REGRET',    note: 'Купил, в итоге не пригодилось' },
-
-    // Entertainment & health
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Развлечения',    amount: 12500,  occurredAt: atDaysAgo(159, 21, 30), emotion: 'HAPPY',     note: 'Концерт + ужин' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Здоровье',       amount: 14000,  occurredAt: atDaysAgo(164, 10, 0),  emotion: 'STRESS',    note: 'Поход к врачу и анализы' },
-
-    // ═══════════════════════════════════════════════════════════════════
-    // MONTH 5  (days 121-150 ago)
-    // ═══════════════════════════════════════════════════════════════════
-
-    // Income
-    { type: 'INCOME',  account: 'Kaspi Gold',       category: 'Зарплата',       amount: 428000, occurredAt: atDaysAgo(147, 9, 5),   emotion: 'HAPPY',     note: 'Зарплата — небольшое повышение' },
-    { type: 'INCOME',  account: 'Kaspi Gold',       category: 'Фриланс',        amount: 85000,  occurredAt: atDaysAgo(135, 21, 0),  emotion: 'HAPPY',     note: 'Оплата за UI-аудит' },
-
-    // Rent & bills
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Аренда',         amount: 155000, occurredAt: atDaysAgo(149, 10, 0),  emotion: 'STRESS',    note: 'Аренда квартиры' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Счета',          amount: 25800,  occurredAt: atDaysAgo(148, 10, 30), emotion: 'STRESS',    note: 'Коммунальные услуги' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Счета',          amount: 15200,  occurredAt: atDaysAgo(129, 11, 0),  emotion: 'NEUTRAL',   note: 'Интернет и связь' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Подписки',       amount: 5980,   occurredAt: atDaysAgo(147, 9, 0),   emotion: 'NEUTRAL',   note: 'Месячные подписки' },
-
-    // Groceries
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 15800,  occurredAt: atDaysAgo(146, 18, 30), emotion: 'NEUTRAL',   note: 'Еженедельная закупка' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 16600,  occurredAt: atDaysAgo(139, 18, 20), emotion: 'NEUTRAL',   note: 'Продукты на неделю' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 16200,  occurredAt: atDaysAgo(132, 18, 30), emotion: 'NEUTRAL',   note: 'Закупка и фрукты' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 15000,  occurredAt: atDaysAgo(124, 18, 0),  emotion: 'NEUTRAL',   note: 'Минимальная закупка' },
-
-    // Coffee & transport
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2200,   occurredAt: atDaysAgo(145, 8, 40),  emotion: 'HAPPY',     note: 'Двойной кофе и ватрушка' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2800,   occurredAt: atDaysAgo(144, 8, 30),  emotion: 'NEUTRAL',   note: 'Такси на встречу' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 1900,   occurredAt: atDaysAgo(141, 16, 10), emotion: 'HAPPY',     note: 'Кофе с коллегой' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 3000,   occurredAt: atDaysAgo(140, 8, 30),  emotion: 'STRESS',    note: 'Пробка — такси дорогой' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2000,   occurredAt: atDaysAgo(137, 16, 20), emotion: 'NEUTRAL',   note: 'Перекус' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2900,   occurredAt: atDaysAgo(136, 8, 20),  emotion: 'NEUTRAL',   note: 'Поездка домой' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 1800,   occurredAt: atDaysAgo(133, 16, 40), emotion: 'NEUTRAL',   note: 'Чай и пирожок' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 3200,   occurredAt: atDaysAgo(130, 8, 30),  emotion: 'NEUTRAL',   note: 'Такси в выходной' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2100,   occurredAt: atDaysAgo(126, 16, 0),  emotion: 'HAPPY',     note: 'Кофе в хорошую погоду' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2600,   occurredAt: atDaysAgo(122, 8, 30),  emotion: 'NEUTRAL',   note: 'Утренняя поездка' },
-
-    // Cafes
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Кафе и рестораны', amount: 10200, occurredAt: atDaysAgo(142, 20, 0),  emotion: 'HAPPY',     note: 'Ужин в итальянском ресторане' },
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Кафе и рестораны', amount: 7800,  occurredAt: atDaysAgo(127, 20, 0),  emotion: 'HAPPY',     note: 'Посидели с другом' },
-
-    // Shopping
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Покупки',        amount: 44000,  occurredAt: atDaysAgo(137, 23, 0),  emotion: 'IMPULSIVE', note: 'Заказал кроссовки не глядя' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Покупки',        amount: 19000,  occurredAt: atDaysAgo(128, 22, 30), emotion: 'REGRET',    note: 'Купил — не понравилось' },
-
-    // Home & health & entertainment
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Дом',            amount: 28000,  occurredAt: atDaysAgo(135, 13, 0),  emotion: 'NEUTRAL',   note: 'Покупки для дома' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Здоровье',       amount: 16000,  occurredAt: atDaysAgo(131, 10, 0),  emotion: 'STRESS',    note: 'Поликлиника и аптека' },
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Развлечения',    amount: 9500,   occurredAt: atDaysAgo(132, 21, 30), emotion: 'HAPPY',     note: 'Кино и боулинг' },
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Развлечения',    amount: 8000,   occurredAt: atDaysAgo(123, 21, 30), emotion: 'IMPULSIVE', note: 'Спонтанно пошли на вечеринку' },
-
-    // ═══════════════════════════════════════════════════════════════════
-    // MONTH 4  (days 91-120 ago)
-    // ═══════════════════════════════════════════════════════════════════
-
-    // Income
-    { type: 'INCOME',  account: 'Kaspi Gold',       category: 'Зарплата',       amount: 435000, occurredAt: atDaysAgo(117, 9, 0),   emotion: 'HAPPY',     note: 'Зарплата' },
-    { type: 'INCOME',  account: 'Kaspi Gold',       category: 'Фриланс',        amount: 92000,  occurredAt: atDaysAgo(105, 20, 30), emotion: 'HAPPY',     note: 'Разработка мобильного приложения' },
-    { type: 'INCOME',  account: 'Kaspi Gold',       category: 'Бонус',          amount: 50000,  occurredAt: atDaysAgo(100, 11, 0),  emotion: 'HAPPY',     note: 'Квартальный KPI-бонус' },
-
-    // Rent & bills
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Аренда',         amount: 155000, occurredAt: atDaysAgo(119, 10, 0),  emotion: 'STRESS',    note: 'Аренда квартиры' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Счета',          amount: 28500,  occurredAt: atDaysAgo(118, 10, 0),  emotion: 'STRESS',    note: 'Коммунальные — зима, отопление дороже' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Счета',          amount: 15600,  occurredAt: atDaysAgo(100, 11, 0),  emotion: 'NEUTRAL',   note: 'Интернет и связь' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Подписки',       amount: 7980,   occurredAt: atDaysAgo(117, 9, 5),   emotion: 'NEUTRAL',   note: 'Netflix, Spotify, iCloud, ChatGPT' },
-
-    // Groceries
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 17200,  occurredAt: atDaysAgo(116, 18, 30), emotion: 'NEUTRAL',   note: 'Еженедельная закупка' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 15600,  occurredAt: atDaysAgo(109, 18, 20), emotion: 'NEUTRAL',   note: 'Продукты и снеки' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 16800,  occurredAt: atDaysAgo(102, 18, 30), emotion: 'NEUTRAL',   note: 'Закупка' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 15400,  occurredAt: atDaysAgo(95, 18, 0),   emotion: 'NEUTRAL',   note: 'Мини-закупка к выходным' },
-
-    // Coffee & transport
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2300,   occurredAt: atDaysAgo(115, 8, 40),  emotion: 'HAPPY',     note: 'Любимое кофе' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 3100,   occurredAt: atDaysAgo(114, 8, 30),  emotion: 'NEUTRAL',   note: 'Такси' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 1900,   occurredAt: atDaysAgo(111, 16, 0),  emotion: 'HAPPY',     note: 'Кофе-брейк' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2700,   occurredAt: atDaysAgo(110, 8, 30),  emotion: 'STRESS',    note: 'Экстренное такси' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2100,   occurredAt: atDaysAgo(107, 15, 0),  emotion: 'NEUTRAL',   note: 'Послеобеденный кофе' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 3400,   occurredAt: atDaysAgo(106, 8, 20),  emotion: 'NEUTRAL',   note: 'Поездка по городу' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2000,   occurredAt: atDaysAgo(103, 16, 40), emotion: 'NEUTRAL',   note: 'Перекус' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2800,   occurredAt: atDaysAgo(97, 8, 40),   emotion: 'NEUTRAL',   note: 'Такси домой вечером' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 1800,   occurredAt: atDaysAgo(96, 16, 0),   emotion: 'HAPPY',     note: 'Кофе утром' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 3100,   occurredAt: atDaysAgo(93, 8, 30),   emotion: 'STRESS',    note: 'Дождь, такси дорогой' },
-
-    // Cafes
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Кафе и рестораны', amount: 11500, occurredAt: atDaysAgo(112, 20, 20), emotion: 'HAPPY',     note: 'Романтический ужин' },
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Кафе и рестораны', amount: 9300,  occurredAt: atDaysAgo(98, 20, 0),   emotion: 'HAPPY',     note: 'Ужин с родителями' },
-
-    // Shopping
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Покупки',        amount: 51000,  occurredAt: atDaysAgo(107, 22, 0),  emotion: 'IMPULSIVE', note: 'Наушники без раздумий в 22:00' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Покупки',        amount: 28000,  occurredAt: atDaysAgo(94, 22, 30),  emotion: 'REGRET',    note: 'Купил, не нужно было' },
-
-    // Entertainment, health, travel
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Развлечения',    amount: 14000,  occurredAt: atDaysAgo(103, 21, 0),  emotion: 'HAPPY',     note: 'Квест и пицца с компанией' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Здоровье',       amount: 12000,  occurredAt: atDaysAgo(102, 10, 0),  emotion: 'STRESS',    note: 'Стоматолог' },
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Путешествия',    amount: 65000,  occurredAt: atDaysAgo(99, 14, 30),  emotion: 'HAPPY',     note: 'Выходные в горах — отель + еда' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 1900,   occurredAt: atDaysAgo(92, 16, 10),  emotion: 'HAPPY',     note: 'Кофе на прогулке' },
-
-    // ═══════════════════════════════════════════════════════════════════
-    // MONTH 3  (days 61-90 ago)
-    // ═══════════════════════════════════════════════════════════════════
-
-    // Income
-    { type: 'INCOME',  account: 'Kaspi Gold',       category: 'Зарплата',       amount: 432000, occurredAt: atDaysAgo(87, 9, 10),   emotion: 'HAPPY',     note: 'Зарплата' },
-    { type: 'INCOME',  account: 'Kaspi Gold',       category: 'Фриланс',        amount: 78000,  occurredAt: atDaysAgo(75, 21, 0),   emotion: 'HAPPY',     note: 'Поддержка сайта — полгода работы' },
-    { type: 'INCOME',  account: 'Freedom Reserve',  category: 'Инвест. доход',  amount: 41000,  occurredAt: atDaysAgo(66, 12, 0),   emotion: 'NEUTRAL',   note: 'Купонный доход по облигациям' },
-
-    // Rent & bills
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Аренда',         amount: 160000, occurredAt: atDaysAgo(89, 10, 0),   emotion: 'STRESS',    note: 'Аренда — хозяин поднял на 5 000' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Счета',          amount: 26700,  occurredAt: atDaysAgo(88, 10, 30),  emotion: 'STRESS',    note: 'Коммунальные услуги' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Счета',          amount: 15000,  occurredAt: atDaysAgo(70, 11, 0),   emotion: 'NEUTRAL',   note: 'Интернет и связь' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Подписки',       amount: 5980,   occurredAt: atDaysAgo(87, 9, 5),    emotion: 'NEUTRAL',   note: 'Подписки' },
-
-    // Groceries
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 16100,  occurredAt: atDaysAgo(86, 18, 30),  emotion: 'NEUTRAL',   note: 'Закупка на неделю' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 15800,  occurredAt: atDaysAgo(79, 18, 20),  emotion: 'NEUTRAL',   note: 'Продукты' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 17500,  occurredAt: atDaysAgo(72, 18, 30),  emotion: 'NEUTRAL',   note: 'Закупка + мясо для шашлыка' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 15200,  occurredAt: atDaysAgo(64, 18, 0),   emotion: 'NEUTRAL',   note: 'Обычная закупка' },
-
-    // Coffee & transport
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2000,   occurredAt: atDaysAgo(85, 8, 40),   emotion: 'HAPPY',     note: 'Утренний ритуал' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2900,   occurredAt: atDaysAgo(84, 8, 30),   emotion: 'NEUTRAL',   note: 'Такси' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2100,   occurredAt: atDaysAgo(81, 16, 0),   emotion: 'HAPPY',     note: 'Кофе с молоком' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 3200,   occurredAt: atDaysAgo(80, 8, 30),   emotion: 'STRESS',    note: 'Опоздание — срочно такси' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 1800,   occurredAt: atDaysAgo(77, 15, 20),  emotion: 'NEUTRAL',   note: 'Кофе перед встречей' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2700,   occurredAt: atDaysAgo(76, 8, 20),   emotion: 'NEUTRAL',   note: 'Поездка в ТЦ' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2200,   occurredAt: atDaysAgo(73, 16, 40),  emotion: 'HAPPY',     note: 'Кофе + десерт' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 3000,   occurredAt: atDaysAgo(69, 8, 30),   emotion: 'NEUTRAL',   note: 'Вечерняя поездка' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 1900,   occurredAt: atDaysAgo(68, 16, 0),   emotion: 'HAPPY',     note: 'Вкусный кофе' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2800,   occurredAt: atDaysAgo(63, 8, 30),   emotion: 'NEUTRAL',   note: 'Такси домой' },
-
-    // Cafes
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Кафе и рестораны', amount: 9800,  occurredAt: atDaysAgo(82, 20, 30),  emotion: 'HAPPY',     note: 'Воскресный бранч' },
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Кафе и рестораны', amount: 8200,  occurredAt: atDaysAgo(64, 20, 0),   emotion: 'HAPPY',     note: 'Ужин в новом месте' },
-
-    // Shopping
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Покупки',        amount: 32000,  occurredAt: atDaysAgo(77, 23, 0),   emotion: 'IMPULSIVE', note: 'Заказал вещи после серфинга рекламы' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Покупки',        amount: 23500,  occurredAt: atDaysAgo(67, 22, 0),   emotion: 'REGRET',    note: 'Снова покупка которую не планировал' },
-
-    // Home, health, entertainment
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Дом',            amount: 35000,  occurredAt: atDaysAgo(66, 13, 30),  emotion: 'NEUTRAL',   note: 'Новый пылесос' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Здоровье',       amount: 11000,  occurredAt: atDaysAgo(74, 10, 0),   emotion: 'STRESS',    note: 'Аптека — заболел' },
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Развлечения',    amount: 13000,  occurredAt: atDaysAgo(71, 21, 0),   emotion: 'HAPPY',     note: 'День рождения друга — ресторан' },
-
-    // ═══════════════════════════════════════════════════════════════════
-    // MONTH 2  (days 31-60 ago)
-    // ═══════════════════════════════════════════════════════════════════
-
-    // Income
-    { type: 'INCOME',  account: 'Kaspi Gold',       category: 'Зарплата',       amount: 440000, occurredAt: atDaysAgo(57, 9, 5),    emotion: 'HAPPY',     note: 'Зарплата' },
-    { type: 'INCOME',  account: 'Kaspi Gold',       category: 'Фриланс',        amount: 95000,  occurredAt: atDaysAgo(45, 20, 30),  emotion: 'HAPPY',     note: 'Разработка интернет-магазина' },
-    { type: 'INCOME',  account: 'Freedom Reserve',  category: 'Инвест. доход',  amount: 38000,  occurredAt: atDaysAgo(41, 12, 0),   emotion: 'NEUTRAL',   note: 'Дивиденды' },
-
-    // Rent & bills
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Аренда',         amount: 160000, occurredAt: atDaysAgo(59, 10, 0),   emotion: 'STRESS',    note: 'Аренда квартиры' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Счета',          amount: 29000,  occurredAt: atDaysAgo(58, 10, 30),  emotion: 'STRESS',    note: 'Коммунальные услуги' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Счета',          amount: 14700,  occurredAt: atDaysAgo(40, 11, 0),   emotion: 'NEUTRAL',   note: 'Интернет и связь' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Подписки',       amount: 5980,   occurredAt: atDaysAgo(57, 9, 5),    emotion: 'NEUTRAL',   note: 'Подписки' },
-
-    // Groceries
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 17800,  occurredAt: atDaysAgo(56, 18, 30),  emotion: 'NEUTRAL',   note: 'Закупка с запасом' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 16100,  occurredAt: atDaysAgo(49, 18, 20),  emotion: 'NEUTRAL',   note: 'Продукты на неделю' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 15500,  occurredAt: atDaysAgo(42, 18, 30),  emotion: 'NEUTRAL',   note: 'Закупка' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 16800,  occurredAt: atDaysAgo(35, 18, 0),   emotion: 'NEUTRAL',   note: 'Продукты и фрукты' },
-
-    // Coffee & transport
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2100,   occurredAt: atDaysAgo(55, 8, 40),   emotion: 'HAPPY',     note: 'Кофе утром' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 3100,   occurredAt: atDaysAgo(54, 8, 30),   emotion: 'NEUTRAL',   note: 'Такси на работу' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2300,   occurredAt: atDaysAgo(51, 16, 0),   emotion: 'HAPPY',     note: 'Холодный кофе в жаркий день' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2800,   occurredAt: atDaysAgo(50, 8, 30),   emotion: 'STRESS',    note: 'Спешил — взял такси' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 1900,   occurredAt: atDaysAgo(47, 15, 20),  emotion: 'NEUTRAL',   note: 'Перекус' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 3000,   occurredAt: atDaysAgo(46, 8, 20),   emotion: 'NEUTRAL',   note: 'Поездка' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 1800,   occurredAt: atDaysAgo(43, 16, 40),  emotion: 'NEUTRAL',   note: 'Кофе' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2900,   occurredAt: atDaysAgo(39, 8, 40),   emotion: 'NEUTRAL',   note: 'Такси' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2000,   occurredAt: atDaysAgo(37, 16, 0),   emotion: 'HAPPY',     note: 'Кофе с другом' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 3200,   occurredAt: atDaysAgo(33, 8, 30),   emotion: 'STRESS',    note: 'Дождь — такси дорого' },
-
-    // Cafes
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Кафе и рестораны', amount: 11200, occurredAt: atDaysAgo(52, 20, 30),  emotion: 'HAPPY',     note: 'Ужин по поводу повышения' },
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Кафе и рестораны', amount: 9500,  occurredAt: atDaysAgo(38, 20, 0),   emotion: 'HAPPY',     note: 'Выходной в ресторане' },
-
-    // Shopping
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Покупки',        amount: 45000,  occurredAt: atDaysAgo(47, 23, 0),   emotion: 'IMPULSIVE', note: 'Ночной шоппинг — сильно пожалел' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Покупки',        amount: 31000,  occurredAt: atDaysAgo(39, 22, 30),  emotion: 'REGRET',    note: 'Купил очередную ненужную вещь' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Покупки',        amount: 22000,  occurredAt: atDaysAgo(34, 22, 0),   emotion: 'NEUTRAL',   note: 'Новая рубашка к собеседованию' },
-
-    // Home, health, entertainment
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Здоровье',       amount: 17000,  occurredAt: atDaysAgo(42, 10, 0),   emotion: 'STRESS',    note: 'Стоматолог — неожиданно дорого' },
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Развлечения',    amount: 11000,  occurredAt: atDaysAgo(43, 21, 30),  emotion: 'HAPPY',     note: 'Кино в IMAX с подругой' },
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Путешествия',    amount: 85000,  occurredAt: atDaysAgo(36, 14, 0),   emotion: 'HAPPY',     note: 'Поездка в Алмату на выходные' },
-
-    // ═══════════════════════════════════════════════════════════════════
-    // MONTH 1  (days 1-30 ago)
-    // ═══════════════════════════════════════════════════════════════════
-
-    // Income
-    { type: 'INCOME',  account: 'Kaspi Gold',       category: 'Зарплата',       amount: 445000, occurredAt: atDaysAgo(27, 9, 5),    emotion: 'HAPPY',     note: 'Зарплата — проиндексировали' },
-    { type: 'INCOME',  account: 'Kaspi Gold',       category: 'Фриланс',        amount: 88000,  occurredAt: atDaysAgo(18, 21, 0),   emotion: 'HAPPY',     note: 'Редизайн корпоративного сайта' },
-    { type: 'INCOME',  account: 'Kaspi Gold',       category: 'Бонус',          amount: 45000,  occurredAt: atDaysAgo(10, 12, 0),   emotion: 'HAPPY',     note: 'Бонус за успешный запуск проекта' },
-    { type: 'INCOME',  account: 'Kaspi Gold',       category: 'Возврат',        amount: 12000,  occurredAt: atDaysAgo(7, 14, 30),   emotion: 'NEUTRAL',   note: 'Возврат за отмененный рейс' },
-
-    // Rent & bills
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Аренда',         amount: 160000, occurredAt: atDaysAgo(29, 10, 0),   emotion: 'STRESS',    note: 'Аренда квартиры' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Счета',          amount: 26500,  occurredAt: atDaysAgo(28, 10, 30),  emotion: 'STRESS',    note: 'Коммунальные услуги' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Счета',          amount: 15800,  occurredAt: atDaysAgo(12, 11, 0),   emotion: 'NEUTRAL',   note: 'Интернет и связь' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Подписки',       amount: 5980,   occurredAt: atDaysAgo(27, 9, 0),    emotion: 'NEUTRAL',   note: 'Подписки' },
-
-    // Groceries
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 17100,  occurredAt: atDaysAgo(28, 18, 30),  emotion: 'NEUTRAL',   note: 'Большая закупка' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 15900,  occurredAt: atDaysAgo(21, 18, 20),  emotion: 'NEUTRAL',   note: 'Продукты' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 17600,  occurredAt: atDaysAgo(14, 18, 30),  emotion: 'NEUTRAL',   note: 'Закупка с друзьями' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 16300,  occurredAt: atDaysAgo(7, 18, 30),   emotion: 'NEUTRAL',   note: 'Еженедельная закупка' },
-
-    // Coffee & transport
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2200,   occurredAt: atDaysAgo(27, 8, 40),   emotion: 'HAPPY',     note: 'Кофе с бонусом в день зарплаты' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2900,   occurredAt: atDaysAgo(26, 8, 30),   emotion: 'NEUTRAL',   note: 'Такси' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2000,   occurredAt: atDaysAgo(23, 16, 0),   emotion: 'HAPPY',     note: 'Кофе' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 3100,   occurredAt: atDaysAgo(22, 8, 30),   emotion: 'STRESS',    note: 'Срочная поездка' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 1900,   occurredAt: atDaysAgo(19, 15, 20),  emotion: 'NEUTRAL',   note: 'Перекус' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2800,   occurredAt: atDaysAgo(18, 8, 20),   emotion: 'NEUTRAL',   note: 'Поездка' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2100,   occurredAt: atDaysAgo(15, 16, 40),  emotion: 'NEUTRAL',   note: 'Кофе и снеки' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 3000,   occurredAt: atDaysAgo(11, 8, 30),   emotion: 'NEUTRAL',   note: 'Такси домой' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 1900,   occurredAt: atDaysAgo(9, 16, 0),    emotion: 'HAPPY',     note: 'Кофе в парке' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2700,   occurredAt: atDaysAgo(5, 8, 30),    emotion: 'NEUTRAL',   note: 'Утренняя поездка' },
-
-    // Cafes
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Кафе и рестораны', amount: 10400, occurredAt: atDaysAgo(24, 20, 30),  emotion: 'HAPPY',     note: 'Ужин с любимым человеком' },
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Кафе и рестораны', amount: 8900,  occurredAt: atDaysAgo(10, 20, 0),   emotion: 'HAPPY',     note: 'Пятничный ужин' },
-
-    // Shopping
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Покупки',        amount: 48000,  occurredAt: atDaysAgo(19, 23, 0),   emotion: 'IMPULSIVE', note: 'Ночной заказ смартфона — пожалел' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Покупки',        amount: 27500,  occurredAt: atDaysAgo(11, 22, 30),  emotion: 'REGRET',    note: 'Еще один ненужный заказ' },
-
-    // Home, health, entertainment, travel
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Дом',            amount: 32000,  occurredAt: atDaysAgo(6, 13, 30),   emotion: 'NEUTRAL',   note: 'Шторы и мелочи для дома' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Здоровье',       amount: 14500,  occurredAt: atDaysAgo(16, 10, 0),   emotion: 'STRESS',    note: 'Профилактика у врача' },
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Развлечения',    amount: 10000,  occurredAt: atDaysAgo(14, 21, 30),  emotion: 'HAPPY',     note: 'Спектакль в театре' },
-
-    // ═══════════════════════════════════════════════════════════════════
-    // CURRENT WEEK  (days 0-7 ago)
-    // ═══════════════════════════════════════════════════════════════════
-
-    // Income
-    { type: 'INCOME',  account: 'Kaspi Gold',       category: 'Фриланс',        amount: 72000,  occurredAt: atDaysAgo(3, 21, 0),    emotion: 'HAPPY',     note: 'Предоплата нового проекта' },
-
-    // Rent & bills for current month
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Аренда',         amount: 160000, occurredAt: atDaysAgo(4, 10, 5),    emotion: 'STRESS',    note: 'Аренда квартиры' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Счета',          amount: 27800,  occurredAt: atDaysAgo(4, 10, 30),   emotion: 'STRESS',    note: 'Коммунальные — выросли снова' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Подписки',       amount: 5980,   occurredAt: atDaysAgo(4, 9, 0),     emotion: 'NEUTRAL',   note: 'Ежемесячные подписки' },
-
-    // Groceries
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 16800,  occurredAt: atDaysAgo(3, 18, 30),   emotion: 'NEUTRAL',   note: 'Продукты на неделю' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Продукты',       amount: 15200,  occurredAt: atDaysAgo(1, 18, 20),   emotion: 'NEUTRAL',   note: 'Доп. закупка' },
-
-    // Coffee & transport
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 1900,   occurredAt: atDaysAgo(4, 8, 40),    emotion: 'HAPPY',     note: 'Утренний кофе' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 3100,   occurredAt: atDaysAgo(3, 8, 30),    emotion: 'NEUTRAL',   note: 'Такси' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 2000,   occurredAt: atDaysAgo(2, 16, 0),    emotion: 'NEUTRAL',   note: 'Кофе' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Транспорт',      amount: 2600,   occurredAt: atDaysAgo(2, 8, 15),    emotion: 'NEUTRAL',   note: 'Поездка по делам' },
-    { type: 'EXPENSE', account: 'Cash Everyday',    category: 'Кофе и снеки',   amount: 1800,   occurredAt: atDaysAgo(0, 9, 10),    emotion: 'HAPPY',     note: 'Кофе сегодня утром' },
-
-    // Cafes
-    { type: 'EXPENSE', account: 'Travel Envelope',  category: 'Кафе и рестораны', amount: 9600,  occurredAt: atDaysAgo(2, 20, 30),   emotion: 'HAPPY',     note: 'Ужин после работы' },
-
-    // Shopping
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Покупки',        amount: 29000,  occurredAt: atDaysAgo(1, 22, 45),   emotion: 'IMPULSIVE', note: 'Поздний онлайн-заказ' },
-    { type: 'EXPENSE', account: 'Kaspi Gold',       category: 'Покупки',        amount: 13200,  occurredAt: atDaysAgo(0, 14, 30),   emotion: 'NEUTRAL',   note: 'Нужная покупка заранее продуманная' },
+  const groceryNotes = [
+    'Еженедельная закупка',
+    'Продукты и бытовая химия',
+    'Продукты на неделю',
+    'Закупка с фруктами и мясом',
   ];
+  const coffeeNotes = [
+    'Утренний кофе',
+    'Кофе перед встречей',
+    'Кофе и перекус',
+    'Холодный кофе после обеда',
+    'Капучино по дороге на работу',
+  ];
+  const transportNotes = [
+    'Такси на работу',
+    'Поездка по делам',
+    'Такси домой',
+    'Поездка в центр',
+    'Вечерняя поездка после встречи',
+  ];
+  const freelanceNotes = [
+    'Лендинг для локального бизнеса',
+    'Поддержка корпоративного сайта',
+    'UI-аудит и правки',
+    'Редизайн личного кабинета',
+    'Разработка внутреннего дашборда',
+  ];
+  const refundNotes = [
+    'Кэшбэк и возврат комиссии',
+    'Возврат за отмененный заказ',
+    'Частичный возврат от авиакомпании',
+  ];
+  const homeNotes = [
+    'Мелочи для дома',
+    'Покупки для кухни и ванной',
+    'Хозтовары и хранение',
+    'Текстиль и мелкий декор',
+  ];
+  const healthNotes = [
+    'Аптека и консультация',
+    'Стоматолог и снимок',
+    'Анализы и прием врача',
+    'Профилактический осмотр',
+  ];
+  const entertainmentNotes = [
+    'Кино и ужин',
+    'Боулинг с друзьями',
+    'Концерт в городе',
+    'Спектакль и кофе после',
+  ];
+  const restaurantNotes = [
+    'Ужин с друзьями',
+    'Поздний ужин после работы',
+    'Воскресный бранч',
+    'Ужин в новом месте',
+  ];
+  const shoppingNotes = {
+    IMPULSIVE: [
+      'Ночной маркетплейс-заказ без плана',
+      'Спонтанно заказал одежду поздно вечером',
+      'Купил гаджет после рекламы в соцсетях',
+    ],
+    REGRET: [
+      'Купил, но потом пожалел',
+      'Вещь оказалась не нужна',
+      'Эмоциональная покупка, потом передумал',
+    ],
+    NEUTRAL: [
+      'Плановая покупка одежды',
+      'Обновил базовые вещи',
+      'Нужная покупка для работы',
+    ],
+  };
+
+  const monthProfiles = [
+    {
+      anchor: 177,
+      salary: 418000,
+      freelance: [68000],
+      invest: 145,
+      bonus: 0,
+      refund: 0,
+      rent: 155000,
+      utilities: 27200,
+      internet: 14800,
+      subscriptions: 5980,
+      groceryBase: 15800,
+      coffeeBase: 1850,
+      transportBase: 2850,
+      cafes: [9100, 8800],
+      shopping: ['IMPULSIVE', 'REGRET'],
+      health: 14000,
+      home: 0,
+      entertainment: 12500,
+      travelExpense: 0,
+      cashAdjustment: 0,
+    },
+    {
+      anchor: 147,
+      salary: 426000,
+      freelance: [52000, 33000],
+      invest: 132,
+      bonus: 0,
+      refund: 0,
+      rent: 155000,
+      utilities: 25800,
+      internet: 15200,
+      subscriptions: 5980,
+      groceryBase: 16000,
+      coffeeBase: 1950,
+      transportBase: 2900,
+      cafes: [10200, 7800],
+      shopping: ['IMPULSIVE', 'REGRET'],
+      health: 16000,
+      home: 28000,
+      entertainment: 9500,
+      travelExpense: 0,
+      cashAdjustment: 1200,
+    },
+    {
+      anchor: 117,
+      salary: 434000,
+      freelance: [92000],
+      invest: 168,
+      bonus: 50000,
+      refund: 0,
+      rent: 155000,
+      utilities: 28500,
+      internet: 15600,
+      subscriptions: 7980,
+      groceryBase: 16500,
+      coffeeBase: 2050,
+      transportBase: 3000,
+      cafes: [11500, 9300],
+      shopping: ['IMPULSIVE', 'REGRET'],
+      health: 12000,
+      home: 0,
+      entertainment: 14000,
+      travelExpense: 38000,
+      cashAdjustment: 0,
+    },
+    {
+      anchor: 87,
+      salary: 432000,
+      freelance: [78000],
+      invest: 176,
+      bonus: 0,
+      refund: 0,
+      rent: 160000,
+      utilities: 26700,
+      internet: 15000,
+      subscriptions: 5980,
+      groceryBase: 16300,
+      coffeeBase: 1950,
+      transportBase: 2900,
+      cafes: [9800, 8200],
+      shopping: ['IMPULSIVE', 'REGRET'],
+      health: 11000,
+      home: 35000,
+      entertainment: 13000,
+      travelExpense: 0,
+      cashAdjustment: -2200,
+    },
+    {
+      anchor: 57,
+      salary: 440000,
+      freelance: [95000],
+      invest: 162,
+      bonus: 0,
+      refund: 0,
+      rent: 160000,
+      utilities: 29000,
+      internet: 14700,
+      subscriptions: 5980,
+      groceryBase: 16900,
+      coffeeBase: 2050,
+      transportBase: 3050,
+      cafes: [11200, 9500],
+      shopping: ['IMPULSIVE', 'REGRET', 'NEUTRAL'],
+      health: 17000,
+      home: 0,
+      entertainment: 11000,
+      travelExpense: 85000,
+      cashAdjustment: 0,
+    },
+    {
+      anchor: 27,
+      salary: 445000,
+      freelance: [88000],
+      invest: 0,
+      bonus: 45000,
+      refund: 12000,
+      rent: 160000,
+      utilities: 26500,
+      internet: 15800,
+      subscriptions: 5980,
+      groceryBase: 17100,
+      coffeeBase: 2000,
+      transportBase: 2950,
+      cafes: [10400, 8900],
+      shopping: ['IMPULSIVE', 'REGRET'],
+      health: 14500,
+      home: 32000,
+      entertainment: 10000,
+      travelExpense: 0,
+      cashAdjustment: 1800,
+    },
+    {
+      anchor: 4,
+      salary: 0,
+      freelance: [72000],
+      invest: 0,
+      bonus: 0,
+      refund: 0,
+      rent: 160000,
+      utilities: 27800,
+      internet: 0,
+      subscriptions: 5980,
+      groceryBase: 16000,
+      coffeeBase: 1950,
+      transportBase: 2850,
+      cafes: [9600],
+      shopping: ['IMPULSIVE', 'NEUTRAL'],
+      health: 0,
+      home: 0,
+      entertainment: 0,
+      travelExpense: 0,
+      cashAdjustment: 0,
+      shortMonth: true,
+    },
+  ];
+
+  const addTransaction = ({
+    type,
+    account,
+    category,
+    amount,
+    occurredAt,
+    emotion = null,
+    note = null,
+  }) => {
+    transactions.push({
+      type,
+      account,
+      category,
+      amount,
+      occurredAt,
+      emotion,
+      note,
+    });
+  };
+
+  for (const profile of monthProfiles) {
+    if (profile.salary > 0) {
+      addTransaction({
+        type: 'INCOME',
+        account: 'Kaspi Gold',
+        category: 'Зарплата',
+        amount: profile.salary,
+        occurredAt: atOffset(profile.anchor, 0, 9, 5),
+        emotion: 'HAPPY',
+        note: 'Зарплата за месяц',
+      });
+    }
+
+    profile.freelance.forEach((amount, index) => {
+      addTransaction({
+        type: 'INCOME',
+        account: 'Kaspi Gold',
+        category: 'Фриланс',
+        amount,
+        occurredAt: atOffset(profile.anchor, 11 + index * 6, 20, 30),
+        emotion: 'HAPPY',
+        note: pick(freelanceNotes),
+      });
+    });
+
+    if (profile.invest > 0) {
+      addTransaction({
+        type: 'INCOME',
+        account: 'Freedom USD Reserve',
+        category: 'Инвест. доход',
+        amount: profile.invest,
+        occurredAt: atOffset(profile.anchor, 20, 12, 0),
+        emotion: 'NEUTRAL',
+        note: 'Дивиденды и купонный доход',
+      });
+    }
+
+    if (profile.bonus > 0) {
+      addTransaction({
+        type: 'INCOME',
+        account: 'Kaspi Gold',
+        category: 'Бонус',
+        amount: profile.bonus,
+        occurredAt: atOffset(profile.anchor, 16, 12, 0),
+        emotion: 'HAPPY',
+        note: 'Бонус за результаты месяца',
+      });
+    }
+
+    if (profile.refund > 0) {
+      addTransaction({
+        type: 'INCOME',
+        account: 'Kaspi Gold',
+        category: 'Возврат',
+        amount: profile.refund,
+        occurredAt: atOffset(profile.anchor, 22, 14, 30),
+        emotion: 'NEUTRAL',
+        note: pick(refundNotes),
+      });
+    }
+
+    addTransaction({
+      type: 'EXPENSE',
+      account: 'Kaspi Gold',
+      category: 'Аренда',
+      amount: profile.rent,
+      occurredAt: atOffset(profile.anchor, 2, 10, 0),
+      emotion: 'STRESS',
+      note: 'Аренда квартиры',
+    });
+    addTransaction({
+      type: 'EXPENSE',
+      account: 'Kaspi Gold',
+      category: 'Счета',
+      amount: profile.utilities,
+      occurredAt: atOffset(profile.anchor, 2, 10, 35),
+      emotion: 'STRESS',
+      note: 'Коммунальные услуги',
+    });
+    if (profile.internet > 0) {
+      addTransaction({
+        type: 'EXPENSE',
+        account: 'Kaspi Gold',
+        category: 'Счета',
+        amount: profile.internet,
+        occurredAt: atOffset(profile.anchor, 19, 11, 0),
+        emotion: 'NEUTRAL',
+        note: 'Интернет и мобильная связь',
+      });
+    }
+    addTransaction({
+      type: 'EXPENSE',
+      account: 'Kaspi Gold',
+      category: 'Подписки',
+      amount: profile.subscriptions,
+      occurredAt: atOffset(profile.anchor, 0, 9, 0),
+      emotion: 'NEUTRAL',
+      note: 'Подписки: музыка, облако, видео',
+    });
+
+    const groceryOffsets = profile.shortMonth ? [1, 3] : [1, 8, 15, 22];
+    groceryOffsets.forEach((offset, index) => {
+      addTransaction({
+        type: 'EXPENSE',
+        account: 'Kaspi Gold',
+        category: 'Продукты',
+        amount: randomAmount(
+          profile.groceryBase - 1700,
+          profile.groceryBase + 1900,
+          100,
+        ),
+        occurredAt: atOffset(profile.anchor, offset, 18, 15 + (index % 3) * 10),
+        emotion: 'NEUTRAL',
+        note: groceryNotes[index % groceryNotes.length],
+      });
+    });
+
+    const commuteOffsets = profile.shortMonth
+      ? [0, 1, 2, 3, 4]
+      : [0, 2, 4, 7, 9, 11, 14, 17, 20, 23];
+    commuteOffsets.forEach((offset, index) => {
+      const isCoffee = index % 2 === 0;
+      addTransaction({
+        type: 'EXPENSE',
+        account: 'Cash Everyday',
+        category: isCoffee ? 'Кофе и снеки' : 'Транспорт',
+        amount: isCoffee
+          ? randomAmount(profile.coffeeBase - 300, profile.coffeeBase + 400, 100)
+          : randomAmount(
+              profile.transportBase - 400,
+              profile.transportBase + 500,
+              100,
+            ),
+        occurredAt: atOffset(
+          profile.anchor,
+          offset,
+          isCoffee ? (index % 4 === 0 ? 8 : 16) : 8,
+          isCoffee ? 40 - (index % 3) * 10 : 20 + (index % 2) * 10,
+        ),
+        emotion: isCoffee
+          ? chance(0.55)
+            ? 'HAPPY'
+            : 'NEUTRAL'
+          : chance(0.28)
+            ? 'STRESS'
+            : 'NEUTRAL',
+        note: pick(isCoffee ? coffeeNotes : transportNotes),
+      });
+    });
+
+    profile.cafes.forEach((amount, index) => {
+      addTransaction({
+        type: 'EXPENSE',
+        account: 'Travel EUR',
+        category: 'Кафе и рестораны',
+        amount: money(amount / 510, 2),
+        occurredAt: atOffset(profile.anchor, 6 + index * 13, 20, 20),
+        emotion: 'HAPPY',
+        note: pick(restaurantNotes),
+      });
+    });
+
+    profile.shopping.forEach((emotion, index) => {
+      addTransaction({
+        type: 'EXPENSE',
+        account: 'Kaspi Gold',
+        category: 'Покупки',
+        amount:
+          emotion === 'IMPULSIVE'
+            ? randomAmount(34000, 52000, 500)
+            : emotion === 'REGRET'
+              ? randomAmount(18000, 32000, 500)
+              : randomAmount(12000, 24000, 500),
+        occurredAt: atOffset(profile.anchor, 10 + index * 8, 22, 15),
+        emotion,
+        note: pick(shoppingNotes[emotion]),
+      });
+    });
+
+    if (profile.home > 0) {
+      addTransaction({
+        type: 'EXPENSE',
+        account: 'Kaspi Gold',
+        category: 'Дом',
+        amount: profile.home,
+        occurredAt: atOffset(profile.anchor, 12, 13, 10),
+        emotion: 'NEUTRAL',
+        note: pick(homeNotes),
+      });
+    }
+
+    if (profile.health > 0) {
+      addTransaction({
+        type: 'EXPENSE',
+        account: 'Kaspi Gold',
+        category: 'Здоровье',
+        amount: profile.health,
+        occurredAt: atOffset(profile.anchor, 14, 10, 0),
+        emotion: 'STRESS',
+        note: pick(healthNotes),
+      });
+    }
+
+    if (profile.entertainment > 0) {
+      addTransaction({
+        type: 'EXPENSE',
+        account: 'Travel EUR',
+        category: 'Развлечения',
+        amount: money(profile.entertainment / 510, 2),
+        occurredAt: atOffset(profile.anchor, 15, 21, 10),
+        emotion: chance(0.2) ? 'IMPULSIVE' : 'HAPPY',
+        note: pick(entertainmentNotes),
+      });
+    }
+
+    if (profile.travelExpense > 0) {
+      addTransaction({
+        type: 'EXPENSE',
+        account: 'Travel EUR',
+        category: 'Путешествия',
+        amount: money(profile.travelExpense / 510, 2),
+        occurredAt: atOffset(profile.anchor, 18, 14, 0),
+        emotion: 'HAPPY',
+        note: 'Поездка и расходы в другой город',
+      });
+    }
+
+    if (profile.cashAdjustment !== 0) {
+      addTransaction({
+        type: 'ADJUSTMENT',
+        account: 'Cash Everyday',
+        category: null,
+        amount: money(
+          42000 + randomAmount(-3000, 3000, 100) + profile.cashAdjustment,
+          2,
+        ),
+        occurredAt: atOffset(profile.anchor, 24, 22, 45),
+        emotion: 'NEUTRAL',
+        note: 'Пересчет наличных после месяца',
+      });
+    }
+  }
 
   await prisma.transaction.createMany({
     data: transactions.map((transaction) => ({
       userId: user.id,
       accountId: accountMap[transaction.account].id,
-      categoryId: categoryMap[`${transaction.type}:${transaction.category}`],
+      categoryId: transaction.category
+        ? categoryMap[`${transaction.type}:${transaction.category}`]
+        : null,
       type: transaction.type,
       emotion: transaction.emotion,
       amount: transaction.amount,
@@ -546,83 +774,82 @@ async function main() {
 
   // ── Transfers ─────────────────────────────────────────────────────────────────
 
-  const transfers = [
-    // Monthly savings to Freedom Reserve
+  const transfers = [];
+
+  const reserveTopUps = [
+    { anchor: 177, amount: 85000, rate: 1 / 475.6, note: 'Перевел часть зарплаты в долларовый резерв' },
+    { anchor: 147, amount: 92000, rate: 1 / 472.4, note: 'Пополнение USD-резерва после зарплаты' },
+    { anchor: 117, amount: 98000, rate: 1 / 469.8, note: 'Резерв в долларах на подушку' },
+    { anchor: 87, amount: 76000, rate: 1 / 471.2, note: 'Меньше обычного — были доп. траты' },
+    { anchor: 57, amount: 101000, rate: 1 / 468.5, note: 'Пополнение резерва после крупного проекта' },
+    { anchor: 27, amount: 94000, rate: 1 / 466.7, note: 'Плановое пополнение USD-счета' },
+  ];
+
+  reserveTopUps.forEach((item) => {
+    transfers.push({
+      fromAccount: 'Kaspi Gold',
+      toAccount: 'Freedom USD Reserve',
+      fromAmount: item.amount,
+      toAmount: convertAmount(item.amount, item.rate),
+      exchangeRate: money(item.rate, 8),
+      occurredAt: atOffset(item.anchor, 1, 19, 10),
+      note: item.note,
+    });
+  });
+
+  [
+    { daysAgo: 160, amount: 30000, note: 'Снятие наличных на месяц' },
+    { daysAgo: 96, amount: 25000, note: 'Пополнение наличных перед поездками по городу' },
+    { daysAgo: 40, amount: 35000, note: 'Наличные на бытовые расходы' },
+    { daysAgo: 5, amount: 20000, note: 'Наличные на неделю' },
+  ].forEach((item) => {
+    transfers.push({
+      fromAccount: 'Kaspi Gold',
+      toAccount: 'Cash Everyday',
+      fromAmount: item.amount,
+      toAmount: item.amount,
+      exchangeRate: 1,
+      occurredAt: atDaysAgo(item.daysAgo, 8, 0),
+      note: item.note,
+    });
+  });
+
+  [
+    { daysAgo: 118, amount: 90000, rate: 1 / 512.5, note: 'Сформировал бюджет поездки в EUR' },
+    { daysAgo: 34, amount: 110000, rate: 1 / 505.9, note: 'Пополнение EUR-счета перед отпуском' },
+    { daysAgo: 6, amount: 65000, rate: 1 / 503.2, note: 'Небольшое пополнение на летние поездки' },
+  ].forEach((item) => {
+    transfers.push({
+      fromAccount: 'Kaspi Gold',
+      toAccount: 'Travel EUR',
+      fromAmount: item.amount,
+      toAmount: convertAmount(item.amount, item.rate),
+      exchangeRate: money(item.rate, 8),
+      occurredAt: atDaysAgo(item.daysAgo, 12, 20),
+      note: item.note,
+    });
+  });
+
+  transfers.push(
     {
-      fromAccount: 'Kaspi Gold',     toAccount: 'Freedom Reserve',
-      fromAmount: 80000,  toAmount: 80000,  exchangeRate: 1,
-      occurredAt: atDaysAgo(172, 20, 0),
-      note: 'Ежемесячное пополнение резерва',
-    },
-    {
-      fromAccount: 'Kaspi Gold',     toAccount: 'Freedom Reserve',
-      fromAmount: 100000, toAmount: 100000, exchangeRate: 1,
-      occurredAt: atDaysAgo(145, 19, 0),
-      note: 'Пополнение резерва',
-    },
-    {
-      fromAccount: 'Kaspi Gold',     toAccount: 'Freedom Reserve',
-      fromAmount: 90000,  toAmount: 90000,  exchangeRate: 1,
-      occurredAt: atDaysAgo(115, 20, 0),
-      note: 'Ежемесячное пополнение резерва',
-    },
-    {
-      fromAccount: 'Kaspi Gold',     toAccount: 'Freedom Reserve',
-      fromAmount: 85000,  toAmount: 85000,  exchangeRate: 1,
-      occurredAt: atDaysAgo(85, 20, 0),
-      note: 'Пополнение резерва — меньше обычного (были доп. расходы)',
-    },
-    {
-      fromAccount: 'Kaspi Gold',     toAccount: 'Freedom Reserve',
-      fromAmount: 95000,  toAmount: 95000,  exchangeRate: 1,
-      occurredAt: atDaysAgo(55, 20, 0),
-      note: 'Ежемесячное пополнение резерва',
-    },
-    {
-      fromAccount: 'Kaspi Gold',     toAccount: 'Freedom Reserve',
-      fromAmount: 90000,  toAmount: 90000,  exchangeRate: 1,
-      occurredAt: atDaysAgo(27, 20, 0),
-      note: 'Пополнение резерва после зарплаты',
-    },
-    // Cash withdrawals
-    {
-      fromAccount: 'Kaspi Gold',     toAccount: 'Cash Everyday',
-      fromAmount: 25000,  toAmount: 25000,  exchangeRate: 1,
-      occurredAt: atDaysAgo(155, 8, 0),
-      note: 'Снятие наличных на месяц',
-    },
-    {
-      fromAccount: 'Kaspi Gold',     toAccount: 'Cash Everyday',
-      fromAmount: 30000,  toAmount: 30000,  exchangeRate: 1,
-      occurredAt: atDaysAgo(60, 8, 0),
-      note: 'Пополнение наличных',
-    },
-    {
-      fromAccount: 'Cash Everyday',  toAccount: 'Kaspi Gold',
-      fromAmount: 8000,   toAmount: 8000,   exchangeRate: 1,
+      fromAccount: 'Cash Everyday',
+      toAccount: 'Kaspi Gold',
+      fromAmount: 12000,
+      toAmount: 12000,
+      exchangeRate: 1,
       occurredAt: atDaysAgo(14, 18, 45),
       note: 'Вернул остаток наличных на карту',
     },
-    // Travel fund top-ups
     {
-      fromAccount: 'Kaspi Gold',     toAccount: 'Travel Envelope',
-      fromAmount: 80000,  toAmount: 80000,  exchangeRate: 1,
-      occurredAt: atDaysAgo(100, 12, 0),
-      note: 'Пополнение конверта на путешествия',
+      fromAccount: 'Freedom USD Reserve',
+      toAccount: 'Kaspi Gold',
+      fromAmount: 95,
+      toAmount: convertAmount(95, 468.9),
+      exchangeRate: 468.9,
+      occurredAt: atDaysAgo(9, 13, 10),
+      note: 'Часть USD-резерва вернул на текущие расходы',
     },
-    {
-      fromAccount: 'Kaspi Gold',     toAccount: 'Travel Envelope',
-      fromAmount: 60000,  toAmount: 60000,  exchangeRate: 1,
-      occurredAt: atDaysAgo(35, 12, 30),
-      note: 'Пополнение перед поездкой в Алмату',
-    },
-    {
-      fromAccount: 'Kaspi Gold',     toAccount: 'Travel Envelope',
-      fromAmount: 50000,  toAmount: 50000,  exchangeRate: 1,
-      occurredAt: atDaysAgo(5, 11, 0),
-      note: 'Пополнение конверта на летние поездки',
-    },
-  ];
+  );
 
   await prisma.transfer.createMany({
     data: transfers.map((transfer) => ({
