@@ -213,7 +213,7 @@ export class DashboardService {
         select: { defaultCurrency: true },
       }),
       this.prisma.account.findMany({
-        where: { userId },
+        where: { userId, isArchived: false },
         select: { id: true, currency: true, initialBalance: true },
       }),
       this.prisma.transaction.findMany({

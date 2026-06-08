@@ -68,6 +68,7 @@ export class UsersService {
         where: {
           id: dto.defaultAccountId,
           userId: id,
+          isArchived: false,
         },
         select: { id: true },
       });
