@@ -193,11 +193,11 @@ export class AccountsService {
         where: { userId, isArchived: false },
       });
 
-      if (existingAccountsCount >= MAX_ACCOUNTS_PER_USER) {
-        throw new BadRequestException(
-          `User cannot have more than ${MAX_ACCOUNTS_PER_USER} accounts`,
-        );
-      }
+      // if (existingAccountsCount >= MAX_ACCOUNTS_PER_USER) {
+      //   throw new BadRequestException(
+      //     `User cannot have more than ${MAX_ACCOUNTS_PER_USER} accounts`,
+      //   );
+      // }
 
       const account = await this.prisma.$transaction(async (prisma) => {
         const accountName = dto.name
