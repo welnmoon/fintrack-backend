@@ -118,7 +118,8 @@ export class DashboardService {
 
     const totalExpenseTransactions = expenseItems.length;
     const markedExpensesCount = expenseItemsWithEmotion.length;
-    const totalExpenseAmount = this.sumConvertedAmounts(expenseItems);
+    const totalMarkedExpenseAmount =
+      this.sumConvertedAmounts(expenseItemsWithEmotion);
     const impulsiveExpenses = expenseItemsWithEmotion.filter(
       (transaction) => transaction.emotion === 'IMPULSIVE',
     );
@@ -155,19 +156,22 @@ export class DashboardService {
         .sort((left, right) => right.count - left.count),
       impulsiveExpenseShare: this.calcShare(
         impulsiveAmount,
-        totalExpenseAmount,
+        totalMarkedExpenseAmount,
       ),
-      regretExpenseShare: this.calcShare(regretAmount, totalExpenseAmount),
-      stressShareByAmount: this.calcShare(stressAmount, totalExpenseAmount),
+      regretExpenseShare: this.calcShare(
+        regretAmount,
+        totalMarkedExpenseAmount,
+      ),
+      stressShareByAmount: this.calcShare(
+        stressAmount,
+        totalMarkedExpenseAmount,
+      ),
       impulsiveShareByCount: this.calcShare(
         impulsiveExpenses.length,
-        totalExpenseTransactions,
+        markedExpensesCount,
       ),
-      regretShareByCount: this.calcShare(
-        regretExpenses.length,
-        totalExpenseTransactions,
-      ),
-      topEmotionCategories: this.buildTopEmotionCategories(impulsiveExpenses),
+      regretShareByCount: this.calcShare(regretExpenses.length, markedExpensesCount),
+      topEmotionCategories: this.buildTopEmotionCategories(expenseItemsWithEmotion),
     };
   }
 
