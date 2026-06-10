@@ -175,32 +175,33 @@ export class TransactionsService {
   async getCurrentMonthIncomeExpense(userId: string) {
     const { periodEnd, periodStart } = getPeriodRange('month');
 
-    const sums = await this.prisma.transaction.groupBy({
-      by: ['type'],
-      where: {
+    const [convertedTransactions, topCategories] = await Promise.all([
+      this.getUserTransactionsConverted(
         userId,
-        occurredAt: { gte: periodStart, lte: periodEnd },
-        type: { in: ['INCOME', 'EXPENSE'] },
-      },
-      _sum: { amount: true },
-    });
-
-    const income =
-      sums.find((item) => item.type === 'INCOME')?._sum.amount ?? 0;
-    const expense =
-      sums.find((item) => item.type === 'EXPENSE')?._sum.amount ?? 0;
-    const topCategories =
-      await this.categoriesService.getTopIncomeExpenseCategories(
+        ['INCOME', 'EXPENSE'],
+        periodStart,
+        periodEnd,
+      ),
+      this.categoriesService.getTopIncomeExpenseCategories(
         userId,
         periodStart,
         periodEnd,
-      );
+      ),
+    ]);
+
+    const income = convertedTransactions.items
+      .filter((item) => item.type === 'INCOME')
+      .reduce((sum, item) => sum + Number(item.convertedAmount ?? item.amount), 0);
+
+    const expense = convertedTransactions.items
+      .filter((item) => item.type === 'EXPENSE')
+      .reduce((sum, item) => sum + Number(item.convertedAmount ?? item.amount), 0);
 
     return {
       periodStart,
       periodEnd,
-      income: Number(income),
-      expense: Number(expense),
+      income: Number(income.toFixed(2)),
+      expense: Number(expense.toFixed(2)),
       ...topCategories,
     };
   }
