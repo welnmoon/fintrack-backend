@@ -6,7 +6,6 @@ import { TransactionsService } from '../transactions/transactions.service';
 import { CategoriesService } from '../categories/categories.service';
 import { FxService } from '../../fx/fx.service';
 import { ForecastService } from '../../analytics/forecast/forecast.service';
-import { getPeriodRange } from '../../../common/helpers/get-current-month-range';
 
 export type BalanceHistoryInterval = 'day' | 'week' | 'month';
 
@@ -93,13 +92,10 @@ export class DashboardService {
   }
 
   async getEmotionsSummary(userId: string) {
-    const { periodStart, periodEnd } = getPeriodRange('month');
     const expenseTransactions =
       await this.transactionService.getUserTransactionsConverted(
         userId,
         ['EXPENSE'],
-        periodStart,
-        periodEnd,
       );
 
     const expenseItems = expenseTransactions.items;
@@ -137,7 +133,7 @@ export class DashboardService {
       currency: expenseTransactions.currency,
       fxUnavailable: expenseTransactions.fxUnavailable,
       fxStale: expenseTransactions.fxStale,
-      periodLabel: 'Текущий месяц',
+      periodLabel: 'За всё время',
       totalExpensesCount: totalExpenseTransactions,
       markedExpensesCount,
       markedExpensesPercent: this.calcShare(
@@ -470,7 +466,8 @@ export class DashboardService {
         continue;
       }
 
-      const existing = categoriesMap.get(item.categoryId);
+      const mapKey = `${item.emotion}:${item.categoryId}`;
+      const existing = categoriesMap.get(mapKey);
       const amount = Number(item.convertedAmount ?? item.amount);
 
       if (existing) {
@@ -479,7 +476,7 @@ export class DashboardService {
         continue;
       }
 
-      categoriesMap.set(item.categoryId, {
+      categoriesMap.set(mapKey, {
         emotion: item.emotion,
         categoryId: item.categoryId,
         categoryName: item.category.name,
@@ -495,8 +492,7 @@ export class DashboardService {
         }
 
         return right.count - left.count;
-      })
-      .slice(0, 5);
+      });
   }
 
   private buildHistoryBuckets(
